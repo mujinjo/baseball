@@ -44,6 +44,9 @@ describe('비행', () => {
     expect(t('slider')).toBeLessThan(t('changeup'));
     expect(t('changeup')).toBeLessThan(t('curve'));
   });
+  it('직구는 0.6초 안에 도착할 만큼 빠르다', () => {
+    expect(flightMs(DEFAULT_PITCH_PARAMS.types.fastball.speed)).toBeLessThan(600);
+  });
   it('도착 시점(t=1)에는 변화구도 실제 위치에 정확히 도달한다', () => {
     for (const type of PITCH_TYPES) {
       const actual = { x: 0.3, y: -0.2 };
@@ -89,5 +92,8 @@ describe('결과 문구', () => {
     const hr = describeOutcome({ type: 'inPlay', kind: 'fly', quality: 'hard' }, 'homeRun', 2);
     expect(hr.title).toBe('홈런!!!');
     expect(hr.sub).toBe('강한 뜬공 2점 득점');
+    const withDist = describeOutcome({ type: 'inPlay', kind: 'fly', quality: 'hard' }, 'homeRun', 1, 128);
+    expect(withDist.sub).toBe('강한 뜬공 128m 1점 득점');
+    expect(describeOutcome({ type: 'foul' }, null, 0, 54).sub).toBe('54m');
   });
 });

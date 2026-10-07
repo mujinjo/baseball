@@ -1,8 +1,8 @@
 import type { Location, PitchType } from '@baseball/core';
 
 /** 존 좌표(중앙 0,0 / 경계 ±1) ↔ 화면 좌표 변환. 포수 시점 고정 카메라 */
-export const ZONE_CENTER = { x: 270, y: 500 };
-export const ZONE_SCALE = 100;
+export const ZONE_CENTER = { x: 270, y: 480 };
+export const ZONE_SCALE = 70;
 export const RELEASE_POINT = { x: 270, y: 240 };
 
 export const toScreen = (l: Location) => ({
@@ -13,7 +13,7 @@ export const toScreen = (l: Location) => ({
 export { GRID_EDGES, gridCells, type GridCell } from '@baseball/core';
 
 /** 공이 날아오는 시간(ms). 느린 구종일수록 오래 걸린다 */
-export const flightMs = (speedKmh: number) => 1000 + (150 - speedKmh) * 10;
+export const flightMs = (speedKmh: number) => 520 + (150 - speedKmh) * 8;
 
 /** 변화구의 눈속임: 공이 처음엔 이 오프셋만큼 벗어난 곳을 향하다 막판에 실제 위치로 꺾인다 */
 export const BREAK_OFFSET: Record<PitchType, Location> = {
@@ -32,7 +32,7 @@ export function ballAt(t: number, actual: Location, type: PitchType) {
   return {
     x: RELEASE_POINT.x + (target.x - RELEASE_POINT.x) * c,
     y: RELEASE_POINT.y + (target.y - RELEASE_POINT.y) * c,
-    r: 4 + 11 * c * c,
+    r: 3 + 8 * c * c,
   };
 }
 

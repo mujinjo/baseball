@@ -6,6 +6,7 @@ export function describeOutcome(
   event: PitchEvent,
   result: PlateResult | null,
   runs: number,
+  distanceM?: number,
 ): { title: string; sub: string } {
   switch (event.type) {
     case 'ball':
@@ -16,10 +17,11 @@ export function describeOutcome(
       }
       return { title: event.swinging ? ko.strikeSwinging : ko.strikeLooking, sub: '' };
     case 'foul':
-      return { title: ko.foul, sub: '' };
+      return { title: ko.foul, sub: distanceM !== undefined ? ko.distance(distanceM) : '' };
     case 'inPlay': {
       const ball = `${ko.quality[event.quality]} ${ko.kind[event.kind]}`.trim();
-      return { title: result ? ko.result[result] : '', sub: `${ball}${ko.runs(runs)}` };
+      const dist = distanceM !== undefined ? ` ${ko.distance(distanceM)}` : '';
+      return { title: result ? ko.result[result] : '', sub: `${ball}${dist}${ko.runs(runs)}` };
     }
   }
 }

@@ -6,3 +6,4 @@ export * from './pitch';
 export * from './sim';
 export * from './grid';
 export * from './ai';
+export * from './trajectory';

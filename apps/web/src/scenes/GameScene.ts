@@ -26,6 +26,7 @@ import {
 import { ko } from '../i18n/ko';
 import { Button } from '../ui/Button';
 import { Scoreboard } from '../ui/Scoreboard';
+import { FieldView } from '../ui/FieldView';
 import { ZoneGrid } from '../ui/ZoneGrid';
 import {
   RELEASE_POINT,
@@ -52,9 +53,11 @@ const GAUGE = { x: 60, y: 845, w: 420, h: 26 };
 const AI_PITCH_DELAY_MS = 1000;
 const THROW_DELAY_MS = 250;
 /** 사람 타자는 공 도착 후에도 이 시간 안에 누르면 스윙으로 인정 */
-const LATE_GRACE_MS = 250;
+const LATE_GRACE_MS = 150;
 const RESULT_HOLD_MS = 2000;
-const BAT_REST = -25;
+const BAT_REST = -15;
+/** 타자(우타자, 포수 시점에서 왼쪽에 선다)의 위치. 손 위치가 배트 축 */
+const BATTER = { x: 95, hands: { x: 150, y: 440 } };
 const PITCHER_COLOR = 0xff9933;
 
 const now = () => performance.now();
@@ -75,6 +78,7 @@ export class GameScene extends Phaser.Scene {
   private subText!: Phaser.GameObjects.Text;
   private ball!: Phaser.GameObjects.Arc;
   private bat!: Phaser.GameObjects.Rectangle;
+  private fieldView!: FieldView;
 
   // 투수 패널
   private pitcherObjs: Phaser.GameObjects.GameObject[] = [];
@@ -123,18 +127,19 @@ export class GameScene extends Phaser.Scene {
     this.titleText = this.add
       .text(270, 215, '', { fontSize: '44px', color: '#ffe066', fontStyle: 'bold', stroke: '#000000', strokeThickness: 5 })
       .setOrigin(0.5)
-      .setDepth(10);
+      .setDepth(60);
     this.subText = this.add
       .text(270, 244, '', { fontSize: '22px', color: '#ffffff', align: 'center', stroke: '#000000', strokeThickness: 4 })
       .setOrigin(0.5, 0)
-      .setDepth(10);
+      .setDepth(60);
     this.hintText = this.add
       .text(270, 682, '', { fontSize: '17px', color: '#cfe8cf', align: 'center', wordWrap: { width: 500 } })
       .setOrigin(0.5, 0);
 
     this.grid = new ZoneGrid(this, (cell) => this.onCourseSelected(cell.center));
     this.ball = this.add.circle(0, 0, 5, 0xffffff).setStrokeStyle(2, 0xcc3333).setVisible(false).setDepth(5);
-    this.bat = this.add.rectangle(105, 610, 10, 150, 0xc8a165).setOrigin(0.5, 1).setAngle(BAT_REST).setDepth(6);
+    this.bat = this.add.rectangle(BATTER.hands.x, BATTER.hands.y, 9, 130, 0xc8a165).setOrigin(0.5, 1).setAngle(BAT_REST).setDepth(6);
+    this.fieldView = new FieldView(this);
 
     this.buildPitcherPanel();
     this.input.on('pointerdown', () => this.onSwingTap());
@@ -155,13 +160,25 @@ export class GameScene extends Phaser.Scene {
     g.fillStyle(0x8a6a3a, 1).fillEllipse(RELEASE_POINT.x, RELEASE_POINT.y + 12, 70, 22);
     g.fillStyle(0xdddddd, 1).fillCircle(RELEASE_POINT.x, RELEASE_POINT.y - 22, 8);
     g.fillStyle(0x3366aa, 1).fillRect(RELEASE_POINT.x - 7, RELEASE_POINT.y - 14, 14, 24);
-    g.fillStyle(0x6b5230, 0.55).fillEllipse(ZONE_CENTER.x, ZONE_CENTER.y + 140, 460, 170);
+    g.fillStyle(0x6b5230, 0.55).fillEllipse(ZONE_CENTER.x, ZONE_CENTER.y + 105, 400, 130);
+    this.drawBatter(g);
     g.lineStyle(3, 0xffffff, 0.9).strokeRect(
       ZONE_CENTER.x - ZONE_SCALE,
       ZONE_CENTER.y - ZONE_SCALE,
       ZONE_SCALE * 2,
       ZONE_SCALE * 2,
     );
+  }
+
+  /** 타자: 스트라이크존(무릎~가슴)의 2배쯤 되는 키로 그려 존의 상대적 크기를 보여준다 */
+  private drawBatter(g: Phaser.GameObjects.Graphics) {
+    const { x, hands } = BATTER;
+    g.fillStyle(0x2c2c3a, 1).fillRect(x - 18, 468, 14, 134).fillRect(x + 4, 468, 14, 134); // 다리
+    g.fillStyle(0xcc4444, 1).fillRect(x - 22, 352, 44, 120); // 상체
+    g.lineStyle(10, 0xcc4444, 1).lineBetween(x + 14, 372, hands.x, hands.y); // 팔
+    g.fillStyle(0xf0c9a0, 1).fillCircle(hands.x, hands.y, 7); // 손
+    g.fillStyle(0xf0c9a0, 1).fillCircle(x, 332, 17); // 얼굴
+    g.fillStyle(0x224488, 1).fillRect(x - 19, 312, 38, 14); // 헬멧
   }
 
   // ───────── 투수 패널 ─────────
@@ -208,6 +225,7 @@ export class GameScene extends Phaser.Scene {
 
   // ───────── 투구 시작 (사람 투수 / 컴퓨터 투수) ─────────
   private resetVisuals() {
+    this.fieldView.hide();
     this.ball.setVisible(false);
     this.titleText.setText('');
     this.subText.setText('');
@@ -312,7 +330,7 @@ export class GameScene extends Phaser.Scene {
 
     if (f.swingAt !== null && !f.batSwung && now() >= f.swingAt) {
       f.batSwung = true;
-      this.tweens.add({ targets: this.bat, angle: { from: BAT_REST, to: 100 }, duration: 140 });
+      this.tweens.add({ targets: this.bat, angle: { from: BAT_REST, to: 110 }, duration: 140 });
     }
 
     const arrival = f.start + f.dur;
@@ -340,23 +358,39 @@ export class GameScene extends Phaser.Scene {
     const out = applyPitch(this.gs, detail.event, this.rng);
     this.gs = out.state;
 
-    const msg = describeOutcome(detail.event, out.result, out.runs);
     const spec = DEFAULT_PITCH_PARAMS.types[pitch.pitchType];
-    this.titleText.setText(msg.title).setColor(out.runs > 0 || out.result === 'homeRun' ? '#ffcc33' : '#ffffff');
-    this.subText.setText(
-      [msg.sub, swing ? ko.timing(timingMs) : ko.noSwing, ko.pitchInfo(pitch.pitchType, spec.speed)]
-        .filter(Boolean)
-        .join('\n'),
-    );
+    const trace = out.trace;
+    const showResult = () => {
+      const msg = describeOutcome(detail.event, out.result, out.runs, trace?.distanceM);
+      // 구장 화면이 떠 있으면 글자를 아래쪽에 둔다
+      this.titleText.setY(trace ? 838 : 215);
+      this.subText.setY(trace ? 868 : 244);
+      this.titleText.setText(msg.title).setColor(out.runs > 0 || out.result === 'homeRun' ? '#ffcc33' : '#ffffff');
+      this.subText.setText(
+        [msg.sub, swing ? ko.timing(timingMs) : ko.noSwing, ko.pitchInfo(pitch.pitchType, spec.speed)]
+          .filter(Boolean)
+          .join('\n'),
+      );
+      this.scoreboard.update(this.gs);
+      this.time.delayedCall(RESULT_HOLD_MS, () => {
+        this.fieldView.hide();
+        this.titleText.setY(215);
+        this.subText.setY(244);
+        if (this.gs.status === 'finished') this.showGameOver();
+        else this.startPitch();
+      });
+    };
+
     this.hintText.setText('');
     this.showPitcherPanel(false);
-    this.scoreboard.update(this.gs);
     this.previewLoc = null;
-
-    this.time.delayedCall(RESULT_HOLD_MS, () => {
-      if (this.gs.status === 'finished') this.showGameOver();
-      else this.startPitch();
-    });
+    if (trace) {
+      // 컨택: 타구가 날아가는 모습을 먼저 보여주고 결과를 띄운다
+      this.ball.setVisible(false);
+      this.fieldView.show(trace, showResult);
+    } else {
+      showResult();
+    }
   }
 
   // ───────── 경기 종료 ─────────

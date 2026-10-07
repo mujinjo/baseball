@@ -1,4 +1,5 @@
 import { resolveInPlay, resolveWalk, DEFAULT_AUTO_RUN_PARAMS } from './autoRun';
+import { traceBattedBall, traceFoul, type BattedBallTrace } from './trajectory';
 import type {
   AutoRunParams,
   GameConfig,
@@ -50,6 +51,7 @@ export function applyPitch(
   let result: PlateResult | null = null;
   let runs = 0;
   let outsAdded = 0;
+  let trace: BattedBallTrace | undefined;
 
   switch (event.type) {
     case 'ball':
@@ -72,6 +74,7 @@ export function applyPitch(
 
     case 'foul':
       if (state.strikes < 2) state.strikes += 1;
+      trace = traceFoul(rng);
       break;
 
     case 'inPlay': {
@@ -80,6 +83,7 @@ export function applyPitch(
       runs = r.runs;
       outsAdded = r.outsAdded;
       result = r.result;
+      trace = traceBattedBall(event.kind, event.quality, r.result, rng);
       break;
     }
   }
@@ -99,7 +103,7 @@ export function applyPitch(
     }
   }
 
-  return { state, result, runs, outsAdded, halfInningEnded };
+  return { state, trace, result, runs, outsAdded, halfInningEnded };
 }
 
 /** 마지막 이닝 이후 말 공격에서 홈팀이 역전/리드를 잡는 순간 즉시 종료 */

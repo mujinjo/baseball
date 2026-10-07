@@ -80,5 +80,6 @@ export const ko = {
     popOut: '아웃',
     sacrificeFly: '희생플라이',
   } satisfies Record<PlateResult, string>,
+  distance: (m: number) => `${m}m`,
   runs: (n: number) => (n > 0 ? ` ${n}점 득점` : ''),
 };

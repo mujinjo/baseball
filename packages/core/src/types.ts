@@ -1,3 +1,5 @@
+import type { BattedBallTrace } from './trajectory';
+
 export type Team = 'away' | 'home';
 /** top = 초(원정 공격), bottom = 말(홈 공격) */
 export type Half = 'top' | 'bottom';
@@ -51,6 +53,8 @@ export type PlateResult =
 
 export interface PitchOutcome {
   state: GameState;
+  /** 인플레이/파울 타구의 궤적(연출용). 컨택이 없으면 undefined */
+  trace?: BattedBallTrace;
   /** 타석이 계속되면 null */
   result: PlateResult | null;
   /** 이번 투구로 들어온 점수 */
