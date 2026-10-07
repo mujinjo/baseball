@@ -1,0 +1,30 @@
+{
+  "batted": {
+    "ground": {
+      "weak":   { "out": 0.90, "single": 0.10 },
+      "normal": { "out": 0.72, "single": 0.26, "double": 0.02 },
+      "hard":   { "out": 0.55, "single": 0.38, "double": 0.07 }
+    },
+    "line": {
+      "weak":   { "out": 0.45, "single": 0.50, "double": 0.05 },
+      "normal": { "out": 0.30, "single": 0.50, "double": 0.15, "triple": 0.02, "homeRun": 0.03 },
+      "hard":   { "out": 0.20, "single": 0.40, "double": 0.28, "triple": 0.04, "homeRun": 0.08 }
+    },
+    "fly": {
+      "weak":   { "out": 0.95, "single": 0.05 },
+      "normal": { "out": 0.72, "single": 0.10, "double": 0.13, "triple": 0.01, "homeRun": 0.04 },
+      "hard":   { "out": 0.35, "single": 0.05, "double": 0.25, "triple": 0.03, "homeRun": 0.32 }
+    },
+    "popup": {
+      "weak":   { "out": 1 },
+      "normal": { "out": 1 },
+      "hard":   { "out": 1 }
+    }
+  },
+  "doublePlayChance": 0.45,
+  "groundOutAdvance": 0.5,
+  "sacFlyChance": { "weak": 0.1, "normal": 0.5, "hard": 0.85 },
+  "secondScoresOnSingle": { "weak": 0.4, "normal": 0.6, "hard": 0.85 },
+  "firstToThirdOnSingle": { "weak": 0.1, "normal": 0.25, "hard": 0.4 },
+  "firstScoresOnDouble": { "weak": 0.3, "normal": 0.5, "hard": 0.75 }
+}

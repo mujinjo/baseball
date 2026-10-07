@@ -1,0 +1,19 @@
+{
+  "name": "baseball",
+  "private": true,
+  "version": "0.1.0",
+  "description": "투수 vs 타자 대전 야구 게임",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w @baseball/web",
+    "build": "npm run build -w @baseball/web",
+    "test": "npm run test -w @baseball/core",
+    "typecheck": "npm run typecheck -w @baseball/core && npm run typecheck -w @baseball/web"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0"
+  }
+}
