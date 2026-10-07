@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { createGameCamera } from '../src/three/stage';
-import { toV3 } from '../src/three/rigs';
+import { PitcherRig, toV3 } from '../src/three/rigs';
 import { twoBone } from '../src/three/humanoid';
-import { project, toScreen, zoneToWorld } from '../src/game/geometry';
+import { ballWorldAt, project, toScreen, zoneToWorld } from '../src/game/geometry';
 
 /** three.js 카메라로 투영한 화면 픽셀 */
 function viaCamera(p: { x: number; y: number; z: number }) {
@@ -81,5 +81,44 @@ describe('두 뼈 IK', () => {
     twoBone(new THREE.Vector3(), new THREE.Vector3(2, 0, 0), 0.3, 0.3, new THREE.Vector3(0, -1, 0), out);
     expect(out.distanceTo(new THREE.Vector3())).toBeCloseTo(0.3, 3);
     expect(out.x).toBeGreaterThan(0.25);
+  });
+});
+
+describe('투수 동작', () => {
+  const reach = 0.6 * 1.05 + 0.05;
+  it('릴리스 지점은 마운드 앞쪽 머리 위 높이, 던지는 손은 투수의 오른쪽(화면 왼쪽)', () => {
+    const p = new PitcherRig().releasePoint();
+    expect(p.y).toBeLessThan(18.44);
+    expect(p.y).toBeGreaterThan(16);
+    expect(p.z).toBeGreaterThan(1.6);
+    expect(p.z).toBeLessThan(2.4);
+    expect(p.x).toBeLessThan(0.1);
+  });
+  it('모든 단계에서 팔이 지나치게 늘어나지 않는다(던지는 팔/글러브 팔 모두 어깨~손 거리가 팔 길이 이내)', () => {
+    const rig = new PitcherRig();
+    for (let tau = 0; tau <= 1.4001; tau += 0.05) {
+      const j = rig.computeJoints(tau);
+      expect(j.handR.distanceTo(j.shoulderR)).toBeLessThan(reach + 0.1);
+      expect(j.handL.distanceTo(j.shoulderL)).toBeLessThan(reach + 0.1);
+    }
+  });
+  it('릴리스 때 던지는 손이 머리보다 높고, 와인드업 코킹 때 어깨보다 높다(오버핸드)', () => {
+    const rig = new PitcherRig();
+    const rel = rig.computeJoints(1);
+    expect(rel.handR.y).toBeGreaterThan(rel.head.y - 0.15);
+    const cock = rig.computeJoints(0.66);
+    expect(cock.handR.y).toBeGreaterThan(cock.shoulderR.y);
+  });
+  it('릴리스 전 글러브 손은 던지는 손보다 몸 앞쪽(홈 쪽)에 있고, 릴리스 후 가슴 쪽으로 당겨진다', () => {
+    const rig = new PitcherRig();
+    const mid = rig.computeJoints(0.6);
+    expect(mid.handL.z).toBeGreaterThan(mid.handR.z); // three z: 클수록 홈 쪽
+    const after = rig.computeJoints(1.3);
+    expect(after.handL.distanceTo(after.chest)).toBeLessThan(0.55);
+  });
+  it('공 궤적은 지정한 시작점(실제 릴리스)에서 출발한다', () => {
+    const start = { x: -0.2, y: 16.9, z: 1.9 };
+    const p = ballWorldAt(0, { x: 0, y: 0 }, 'fastball', start);
+    expect([p.x, p.y, p.z]).toEqual([start.x, start.y, start.z]);
   });
 });

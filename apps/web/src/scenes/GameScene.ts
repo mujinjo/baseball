@@ -342,6 +342,8 @@ export class GameScene extends Phaser.Scene {
     // 투수 동작: 릴리스 시각에 맞춰 와인드업 → 투구 → 팔로스루
     const tau = this.debugTau ?? (this.releaseAt > 0 ? Math.min(1.4, (now() - (this.releaseAt - WINDUP_MS)) / WINDUP_MS) : 0);
     this.stage.pitcher.setProgress(Math.max(0, tau));
+    // 릴리스 전에는 공이 투수의 오른손에 들려 있다
+    if (this.releaseAt > 0 && tau < 1 && this.phase === 'ready') this.stage.setBall(this.stage.pitcher.rightHandWorld());
     this.stage.render();
     if (this.phase === 'gauge') {
       const pos = gaugePosition(now() - this.gaugeStart);
@@ -352,7 +354,7 @@ export class GameScene extends Phaser.Scene {
 
     const f = this.flight;
     const t = (now() - f.start) / f.dur;
-    this.stage.setBall(ballWorldAt(t, this.previewLoc, this.pendingThrow.pitchType));
+    this.stage.setBall(ballWorldAt(t, this.previewLoc, this.pendingThrow.pitchType, this.stage.pitcher.releasePoint()));
 
     if (f.swingAt !== null && !f.batSwung && now() >= f.swingAt) {
       f.batSwung = true;

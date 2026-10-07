@@ -78,17 +78,17 @@ const offsetToWorld = (o: Location): Point3 => ({
 
 /**
  * t(0~1) 시점의 공 월드 좌표. 투수 손에서 시작해 막판에 실제 위치(홈플레이트 위)로 꺾여 들어온다.
- * t=1에서 zoneToWorld(actual)과 정확히 같다.
+ * t=1에서 zoneToWorld(actual)과 정확히 같다. start를 주면 투수 동작에서 계산한 실제 릴리스 지점을 쓴다.
  */
-export function ballWorldAt(t: number, actual: Location, type: PitchType): Point3 {
+export function ballWorldAt(t: number, actual: Location, type: PitchType, start: Point3 = RELEASE_WORLD): Point3 {
   const c = Math.min(1, Math.max(0, t));
   const off = BREAK_OFFSET[type];
   const k = 1 - Math.pow(c, 2.5);
   const end = zoneToWorld({ x: actual.x + off.x * k, y: actual.y + off.y * k });
   return {
-    x: RELEASE_WORLD.x + (end.x - RELEASE_WORLD.x) * c,
-    y: RELEASE_WORLD.y + (end.y - RELEASE_WORLD.y) * c,
-    z: RELEASE_WORLD.z + (end.z - RELEASE_WORLD.z) * c,
+    x: start.x + (end.x - start.x) * c,
+    y: start.y + (end.y - start.y) * c,
+    z: start.z + (end.z - start.z) * c,
   };
 }
 

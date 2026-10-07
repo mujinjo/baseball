@@ -5,6 +5,7 @@ import { Humanoid, emptyJoints, pinstripeTexture, twoBone, type Joints, SKIN } f
 
 const rad = (d: number) => (d * Math.PI) / 180;
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+const lerp3 = (a: Point3, b: Point3, t: number): Point3 => ({ x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t), z: lerp(a.z, b.z, t) });
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 const smooth = (a: number, b: number, v: number) => {
   const t = clamp01((v - a) / (b - a));
@@ -18,6 +19,12 @@ const fwd = (az: number) => new THREE.Vector3(Math.cos(az), 0, -Math.sin(az));
 const right = (az: number) => new THREE.Vector3(Math.sin(az), 0, Math.cos(az));
 const UP = new THREE.Vector3(0, 1, 0);
 
+export interface RelHand {
+  f: number;
+  r: number;
+  u: number;
+}
+
 interface BodyOpts {
   /** 발밑 기준점(three 좌표) */
   base: THREE.Vector3;
@@ -30,8 +37,9 @@ interface BodyOpts {
   crouch: number;
   footL: THREE.Vector3;
   footR: THREE.Vector3;
-  handL: THREE.Vector3;
-  handR: THREE.Vector3;
+  /** 손 목표: three 좌표 그대로, 또는 가슴 기준 상대 좌표(f=가슴이 향한 방향, r=그의 오른쪽, u=위, 단위 m) */
+  handL: THREE.Vector3 | RelHand;
+  handR: THREE.Vector3 | RelHand;
   headYaw: number;
   /** 팔꿈치가 굽는 방향(생략하면 아래쪽·바깥쪽) */
   poleL?: THREE.Vector3;
@@ -62,10 +70,16 @@ function bodyJoints(o: BodyOpts, j: Joints): Joints {
   const ankleR = o.footR.clone().add(new THREE.Vector3(0, 0.07 * s, 0));
   twoBone(j.hipL, ankleL, 0.46 * s, 0.45 * s, fP.clone().addScaledVector(rP, -0.25), j.kneeL);
   twoBone(j.hipR, ankleR, 0.46 * s, 0.45 * s, fP.clone().addScaledVector(rP, 0.25), j.kneeR);
-  j.handL.copy(o.handL);
-  j.handR.copy(o.handR);
-  twoBone(j.shoulderL, o.handL, 0.3 * s, 0.28 * s, o.poleL ?? new THREE.Vector3(0, -1, 0).addScaledVector(rC, -0.35), j.elbowL);
-  twoBone(j.shoulderR, o.handR, 0.3 * s, 0.28 * s, o.poleR ?? new THREE.Vector3(0, -1, 0).addScaledVector(rC, 0.35), j.elbowR);
+  const resolve = (h: THREE.Vector3 | RelHand) =>
+    h instanceof THREE.Vector3
+      ? h
+      : j.chest.clone().addScaledVector(fC, h.f * s).addScaledVector(rC, h.r * s).addScaledVector(UP, h.u * s);
+  const handL = resolve(o.handL);
+  const handR = resolve(o.handR);
+  j.handL.copy(handL);
+  j.handR.copy(handR);
+  twoBone(j.shoulderL, handL, 0.3 * s, 0.28 * s, o.poleL ?? new THREE.Vector3(0, -1, 0).addScaledVector(rC, -0.35), j.elbowL);
+  twoBone(j.shoulderR, handR, 0.3 * s, 0.28 * s, o.poleR ?? new THREE.Vector3(0, -1, 0).addScaledVector(rC, 0.35), j.elbowR);
   return j;
 }
 
@@ -210,10 +224,26 @@ export class BatterRig {
     };
   }
 
-  /** 스윙 진행도 u: 0=준비, 1=타격(공 위치), 2=마무리 */
+  /**
+   * 스윙 진행도 u: 0=준비, 1=타격(공 위치), 2=마무리.
+   * 실제 스윙처럼 골반이 먼저 돌고 → 어깨 → 손 → 배트 머리 순서로 늦게 따라온다(배트 머리가 뒤에서 끌려 나옴).
+   */
   poseAtProgress(target: Location, u: number): void {
-    const contact = this.contactPose(target);
-    this.setPose(u <= 1 ? lerpPose(STANCE, contact, u) : lerpPose(contact, FOLLOW, clamp01(u - 1)));
+    const c = this.contactPose(target);
+    if (u <= 1) {
+      const e = (a: number, b: number) => smooth(a, b, u);
+      this.setPose({
+        hands: lerp3(STANCE.hands, c.hands, e(0, 0.8)),
+        azimuth: lerp(STANCE.azimuth, c.azimuth, e(0.3, 1)),
+        loft: lerp(STANCE.loft, c.loft, e(0.05, 0.85)),
+        pelvisYaw: lerp(STANCE.pelvisYaw, c.pelvisYaw, e(0, 0.75)),
+        chestYaw: lerp(STANCE.chestYaw, c.chestYaw, e(0.12, 0.92)),
+        lean: lerp(STANCE.lean, c.lean, u),
+        crouch: lerp(STANCE.crouch, c.crouch, u),
+      });
+    } else {
+      this.setPose(lerpPose(c, FOLLOW, smooth(0, 1, clamp01(u - 1))));
+    }
   }
 
   reset() {
@@ -262,7 +292,9 @@ const keyedNum = (t: number, keys: [number, number][]) => {
 /**
  * 우완 투수의 오버핸드 투구. 진행도 τ: 0=세트, 0.3=다리 들기, 0.62=스트라이드 착지, 1=릴리스, 1.4=팔로스루 끝.
  * 투수는 홈플레이트(카메라)를 향해 서므로 그의 오른쪽(던지는 팔)은 화면 왼쪽(-x)이다.
- * 던지는 팔은 몸 뒤로 내려갔다가 어깨 높이로 접어 올린(코킹) 뒤 머리 위를 넘어 앞으로 뿌린다.
+ * 손 위치는 가슴 기준 상대 좌표(앞 f / 오른쪽 r / 위 u)로 정의해 몸이 돌고 숙여도 팔이 자연스럽게 따라온다.
+ *  - 던지는 팔: 가슴 앞 → 몸 뒤로 내림 → 어깨 높이로 접어 올림(코킹) → 머리 위로 뿌림 → 반대쪽 허리로 마무리
+ *  - 글러브 팔: 가슴 앞 → 홈 쪽으로 뻗어 균형 → 릴리스와 함께 가슴으로 당김
  */
 export class PitcherRig {
   readonly humanoid: Humanoid;
@@ -271,7 +303,13 @@ export class PitcherRig {
   private readonly scale = 1.05;
 
   constructor() {
-    this.humanoid = new Humanoid({ jersey: HOME_COLORS.jersey, pants: 0xf7f7fa, cap: HOME_COLORS.cap, skin: SKIN, shoes: 0x1a1a1f }, this.scale);
+    this.humanoid = new Humanoid(
+      { jersey: HOME_COLORS.jersey, pants: 0xf7f7fa, cap: HOME_COLORS.cap, skin: SKIN, shoes: 0x1a1a1f },
+      this.scale,
+      undefined,
+      'cap',
+      'L',
+    );
     this.object.add(this.humanoid.root);
     this.setProgress(0);
   }
@@ -280,9 +318,11 @@ export class PitcherRig {
     this.humanoid.setColors(c.jersey, c.pants, c.cap);
   }
 
-  setProgress(tau: number) {
+  /** 진행도 τ의 관절 위치를 계산한다 */
+  computeJoints(tau: number): Joints {
     // 마운드 중심 기준 상대 좌표 (x=오른쪽, y=홈 쪽이 음수, z=마운드 윗면 기준 높이)
     const W = (x: number, y: number, z: number) => toV3({ x, y: MOUND.y + y, z: MOUND.height + z });
+    const rel = (f: number, r: number, u: number) => new THREE.Vector3(f, r, u);
     // 체중 이동: 골반이 홈 쪽으로 약 0.9m 나간다
     const shift = lerp(0, -0.9, smooth(0.3, 0.72, tau)) + lerp(0, -0.35, smooth(1.0, 1.4, tau));
     const base = toV3({ x: 0, y: MOUND.y + shift, z: MOUND.height });
@@ -300,24 +340,24 @@ export class PitcherRig {
       [0.62, W(0.1, -1.3, 0)],
       [1.4, W(0.1, -1.3, 0)],
     ]);
-    // 던지는 손(오른손)과 글러브 손(왼손)
     const handR = keyed(tau, [
-      [0, W(-0.06, -0.2, 1.28)],
-      [0.3, W(-0.06, -0.22, 1.3)],
-      [0.5, W(-0.45, 0.28, 0.95)], // 몸 뒤로 내려 팔을 펴고
-      [0.66, W(-0.6, 0.22, 1.6)], // 어깨 높이로 접어 올려 코킹
-      [0.84, W(-0.45, -0.3, 2.05)], // 머리 위를 지나
-      [1.0, W(RELEASE_WORLD.x, RELEASE_WORLD.y - MOUND.y, RELEASE_WORLD.z - MOUND.height)],
-      [1.2, W(-0.05, -1.55, 1.2)],
-      [1.4, W(0.25, -1.55, 0.7)], // 반대쪽 무릎 쪽으로 내려오며 마무리
+      [0, rel(0.14, 0.04, -0.3)],
+      [0.3, rel(0.16, 0.04, -0.2)],
+      [0.5, rel(-0.3, 0.42, -0.42)], // 몸 뒤로 내려 팔을 편다
+      [0.66, rel(-0.12, 0.52, 0.28)], // 어깨 높이로 접어 올린 코킹
+      [0.84, rel(0.22, 0.34, 0.5)], // 머리 위를 지나
+      [1.0, rel(0.4, 0.26, 0.42)], // 릴리스: 가슴 앞 위쪽
+      [1.2, rel(0.34, 0.0, -0.22)],
+      [1.4, rel(0.28, -0.1, -0.5)], // 반대쪽 허리로 내려오며 마무리
     ]);
     const handL = keyed(tau, [
-      [0, W(0.06, -0.2, 1.28)],
-      [0.3, W(0.06, -0.22, 1.3)],
-      [0.55, W(0.3, -0.75, 1.45)], // 글러브를 홈 쪽으로 뻗어 균형을 잡고
-      [0.9, W(0.3, -0.95, 1.5)],
-      [1.1, W(0.15, -0.55, 1.15)], // 몸 쪽으로 당긴다
-      [1.4, W(0.15, -0.5, 1.05)],
+      [0, rel(0.14, -0.04, -0.3)],
+      [0.3, rel(0.16, -0.04, -0.2)],
+      [0.5, rel(0.42, -0.2, 0.02)], // 글러브를 홈 쪽으로 뻗어 균형
+      [0.85, rel(0.4, -0.22, 0.1)],
+      [1.05, rel(0.22, -0.2, -0.12)], // 릴리스와 함께 가슴으로 당김
+      [1.3, rel(0.14, -0.15, -0.28)],
+      [1.4, rel(0.14, -0.15, -0.28)],
     ]);
 
     const pelvisYaw = rad(keyedNum(tau, [[0, -100], [0.3, -150], [0.5, -150], [1.0, -78], [1.4, -62]]));
@@ -325,12 +365,12 @@ export class PitcherRig {
     const lean = keyedNum(tau, [[0, 0.04], [0.3, 0.0], [0.7, 0.12], [1.0, 0.5], [1.4, 0.7]]);
     const crouch = keyedNum(tau, [[0, 0], [0.3, 0.0], [0.62, 0.12], [1.0, 0.22], [1.4, 0.3]]);
 
-    // 팔꿈치 방향: 코킹 구간엔 옆(오른쪽)으로, 앞으로 뿌릴 땐 아래로
+    // 팔꿈치 방향: 던지는 팔은 코킹 때 바깥쪽(오른쪽)으로, 뿌릴 땐 아래로. 글러브 팔은 아래·바깥으로 굽힌다
     const outward = right(chestYaw);
-    const poleR = new THREE.Vector3(0, -0.4, 0).addScaledVector(outward, lerp(1.0, 0.1, smooth(0.75, 1.0, tau)));
-    const poleL = new THREE.Vector3(0, -1, 0).addScaledVector(outward, -0.3);
+    const poleR = new THREE.Vector3(0, -0.3, 0).addScaledVector(outward, keyedNum(tau, [[0, 0.3], [0.45, 0.4], [0.66, 1.0], [0.9, 0.6], [1.0, 0.2]]));
+    const poleL = new THREE.Vector3(0, -1, 0).addScaledVector(outward, -0.7);
 
-    bodyJoints(
+    return bodyJoints(
       {
         base,
         scale: this.scale,
@@ -340,15 +380,33 @@ export class PitcherRig {
         crouch,
         footL,
         footR,
-        handL,
-        handR,
+        handL: { f: handL.x, r: handL.y, u: handL.z },
+        handR: { f: handR.x, r: handR.y, u: handR.z },
         headYaw: rad(-90),
         poleL,
         poleR,
       },
       this.joints,
     );
-    this.humanoid.update(this.joints);
+  }
+
+  setProgress(tau: number) {
+    this.humanoid.update(this.computeJoints(tau));
+  }
+
+  /** 던지는 손(오른손)의 월드 좌표(x=오른쪽, y=투수 쪽, z=위). 릴리스 지점 계산과 손에 쥔 공 표시에 쓴다 */
+  rightHandWorld(tau?: number): Point3 {
+    const j = tau === undefined ? this.joints : this.computeJoints(tau);
+    return { x: j.handR.x, y: -j.handR.z, z: j.handR.y };
+  }
+
+  /** 릴리스(τ=1) 순간 공이 나오는 월드 좌표 */
+  releasePoint(): Point3 {
+    const keep = this.joints;
+    this.joints = emptyJoints();
+    const p = this.rightHandWorld(1);
+    this.joints = keep;
+    return p;
   }
 }
 
@@ -365,7 +423,7 @@ export class FielderRig {
     private colors: TeamColors = HOME_COLORS,
     scale = 1,
   ) {
-    this.humanoid = new Humanoid({ jersey: colors.jersey, pants: colors.pants, cap: colors.cap, skin: SKIN, shoes: 0xe8e8e8 }, scale);
+    this.humanoid = new Humanoid({ jersey: colors.jersey, pants: colors.pants, cap: colors.cap, skin: SKIN, shoes: 0xe8e8e8 }, scale, undefined, 'cap', 'L');
     this.object.add(this.humanoid.root);
     const base = toV3({ x, y, z: 0 });
     const s = scale;

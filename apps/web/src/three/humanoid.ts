@@ -145,12 +145,15 @@ export class Humanoid {
   private legL: [Limb, Limb];
   private feet: [THREE.Mesh, THREE.Mesh];
   private flap: THREE.Mesh;
+  private glove: THREE.Mesh | null = null;
 
   constructor(
     colors: HumanoidColors,
     private scale = 1,
     jerseyMap?: THREE.Texture,
     private helmetStyle: 'helmet' | 'cap' = 'cap',
+    /** 글러브를 낀 손(투수·야수는 왼손) */
+    private gloveHand: 'L' | 'R' | null = null,
   ) {
     this.jerseyMat = mat(colors.jersey, jerseyMap ? { map: jerseyMap } : {});
     this.capMat = mat(colors.cap);
@@ -185,6 +188,13 @@ export class Humanoid {
       new THREE.Mesh(new THREE.SphereGeometry(0.045 * s, 10, 8), mat(0xf4f4f6)),
       new THREE.Mesh(new THREE.SphereGeometry(0.045 * s, 10, 8), mat(0xf4f4f6)),
     ];
+    if (this.gloveHand) {
+      // 글러브: 납작한 갈색 타원체. 팔뚝 방향으로 길게
+      const geo = new THREE.SphereGeometry(1, 14, 10);
+      this.glove = new THREE.Mesh(geo, mat(0x7a4720));
+      this.glove.scale.set(0.095 * s, 0.085 * s, 0.05 * s);
+      this.hands[this.gloveHand === 'L' ? 0 : 1].visible = false;
+    }
     this.legU = [new Limb(this.pantsMat, 0.8), new Limb(this.pantsMat, 0.8)];
     this.legL = [new Limb(this.pantsMat, 0.75), new Limb(this.pantsMat, 0.75)];
     // 신발: 앞뒤로 긴 둥근 형태 (캡슐을 눕혀 X축 방향으로)
@@ -205,6 +215,7 @@ export class Humanoid {
       ...this.armU.map((l) => l.group),
       ...this.armL.map((l) => l.group),
       ...this.hands,
+      ...(this.glove ? [this.glove] : []),
       ...this.legU.map((l) => l.group),
       ...this.legL.map((l) => l.group),
       ...this.feet,
@@ -246,6 +257,14 @@ export class Humanoid {
     this.armL[1].set(j.elbowR, j.handR, 0.047 * s, 0.04 * s);
     this.hands[0].position.copy(j.handL);
     this.hands[1].position.copy(j.handR);
+    if (this.glove) {
+      const hand = this.gloveHand === 'L' ? j.handL : j.handR;
+      const elbow = this.gloveHand === 'L' ? j.elbowL : j.elbowR;
+      // 글러브는 팔뚝 끝에서 팔뚝 방향으로 조금 더 나간 곳, 입구가 몸 바깥을 향하도록
+      const dir = tmpA.subVectors(hand, elbow).normalize();
+      this.glove.position.copy(hand).addScaledVector(dir, 0.05 * s);
+      this.glove.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), dir);
+    }
 
     this.legU[0].set(j.hipL, j.kneeL, 0.085 * s, 0.07 * s);
     this.legU[1].set(j.hipR, j.kneeR, 0.085 * s, 0.07 * s);
