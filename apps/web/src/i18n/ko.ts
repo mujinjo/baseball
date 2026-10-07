@@ -1,9 +1,9 @@
-import type { BattedBallKind, BattedBallQuality, Half, PitchType, PlateResult, Team } from '@baseball/core';
+import type { AiLevel, BattedBallKind, BattedBallQuality, Half, PitchType, PlateResult, Team } from '@baseball/core';
 
 /** 모든 화면 문자열은 여기서 관리한다 (추후 다국어 확장 지점) */
 export const ko = {
   title: '투타 대전 야구',
-  subtitle: '한 기기로 둘이서 하는 투수 vs 타자 승부',
+  subtitle: '컴퓨터와 겨루는 투수 vs 타자 승부',
   team: { away: '원정', home: '홈' } satisfies Record<Team, string>,
   half: { top: '초', bottom: '말' } satisfies Record<Half, string>,
   inning: (n: number) => `${n}회`,
@@ -20,28 +20,27 @@ export const ko = {
     changeup: '체인지업',
   } satisfies Record<PitchType, string>,
 
+  level: { easy: '쉬움', normal: '보통', hard: '어려움' } satisfies Record<AiLevel, string>,
+  levelLabel: '컴퓨터 난이도',
+  sideLabel: '내 팀',
+  side: { away: '원정 (선공)', home: '홈 (후공)' } satisfies Record<Team, string>,
+  start: (n: number) => `${n}이닝 경기 시작`,
+
   role: {
-    pitcher: (team: Team) => `투수 (${ko.team[team]})`,
-    batter: (team: Team) => `타자 (${ko.team[team]})`,
+    pitcher: (team: Team) => `내가 투수 (${ko.team[team]})`,
+    batter: (team: Team) => `내가 타자 (${ko.team[team]})`,
   },
-  pitcherHint: '구종과 코스를 고르고 투구하세요',
-  pitcherTarget: '코스를 터치하세요 (안쪽 9칸이 스트라이크)',
-  pickPitchFirst: '구종을 먼저 고르세요',
-  throwBtn: '투구 게이지 시작',
-  stopBtn: '정지! (가운데에 맞출수록 정확)',
+  pitcherHint: '구종을 고르고 코스를 터치하면 바로 게이지가 움직여요',
+  pitcherGauge: '가운데에서 멈출수록 정확해요! (스페이스바도 가능)',
   gaugeLabel: '제구 게이지',
-
-  handoffToBatter: (team: Team) => `${ko.team[team]} 타자에게 기기를 넘겨주세요`,
-  handoffToPitcher: (team: Team) => `${ko.team[team]} 투수에게 기기를 넘겨주세요`,
-  tapWhenReady: '준비되면 화면을 터치',
-
-  batterHint: '구종/코스를 예측해 보세요 (선택)',
-  guessType: '구종 예측',
-  guessCell: '코스 예측: 표에서 한 칸을 터치',
-  noGuess: '예측 없음',
-  readyBtn: '타격 준비!',
+  stopBtn: '정지!',
+  waitCourse: '코스를 고르세요',
+  batterHint: '컴퓨터 투수가 던집니다',
   getReady: '준비...',
-  swingHint: '공이 도착하는 순간 화면을 터치해 스윙!',
+  swingHint: '공이 도착하는 순간 화면을 터치해 스윙! (스페이스바도 가능)',
+  youWin: '승리!',
+  youLose: '패배...',
+  draw: '무승부',
 
   early: '빠름',
   late: '늦음',

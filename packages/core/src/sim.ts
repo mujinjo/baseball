@@ -16,6 +16,7 @@ import {
   type PitchType,
 } from './pitch';
 import { DEFAULT_AUTO_RUN_PARAMS } from './autoRun';
+import { decideSwing } from './ai';
 import { gaussian } from './rng';
 import type { AutoRunParams, PlateResult, Rng } from './types';
 
@@ -99,12 +100,7 @@ export function simulatePlateAppearance(
 
     // 타자: 투구 위치를 눈으로 보고(오차 있음) 스윙 여부를 정한다
     const seen: Location = pitchLocationSeen(pitch, pitcher, batter, rng, pp);
-    const twoStrikes = state.strikes === 2;
-    const seenIn = Math.abs(seen.x) <= 1 && Math.abs(seen.y) <= 1;
-    const seenNear = Math.abs(seen.x) <= 1.4 && Math.abs(seen.y) <= 1.4;
-    const swing = seenIn
-      ? twoStrikes || rng() >= takeRate
-      : seenNear && rng() < (twoStrikes ? chaseRate * 2 : chaseRate);
+    const swing = decideSwing(seen, state.strikes, { takeRate, chaseRate }, rng);
 
     const action: BatterAction = { swing, timingMs: gaussian(rng) * sigma };
     if (opts.guessAccuracy !== undefined) {

@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
-import type { Location } from '@baseball/core';
-import { GRID_EDGES, gridCells, toScreen, type GridCell } from '../game/geometry';
+import { GRID_EDGES, gridCells, type GridCell, type Location } from '@baseball/core';
+import { toScreen } from '../game/geometry';
 
 /** 포수 시점 스트라이크존 5×5 격자. 안쪽 9칸=스트라이크, 바깥 한 겹=볼존 */
 export class ZoneGrid {
