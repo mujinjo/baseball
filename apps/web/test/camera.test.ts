@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { createGameCamera } from '../src/three/stage';
-import { PitcherRig, toV3 } from '../src/three/rigs';
+import { BatterRig, PitcherRig, pushOutOfTorso, toV3 } from '../src/three/rigs';
 import { twoBone } from '../src/three/humanoid';
 import { ballWorldAt, project, toScreen, zoneToWorld } from '../src/game/geometry';
 
@@ -120,5 +120,68 @@ describe('투수 동작', () => {
     const start = { x: -0.2, y: 16.9, z: 1.9 };
     const p = ballWorldAt(0, { x: 0, y: 0 }, 'fastball', start);
     expect([p.x, p.y, p.z]).toEqual([start.x, start.y, start.z]);
+  });
+});
+
+describe('팔이 몸통을 뚫지 않는다', () => {
+  // three.js의 CanvasTexture가 필요로 하는 최소한의 canvas 흉내(테스트 환경은 DOM이 없다)
+  (globalThis as unknown as { document: unknown }).document = {
+    createElement: () => ({ width: 0, height: 0, getContext: () => ({ fillRect() {}, fillStyle: '' }) }),
+  };
+
+  it('pushOutOfTorso: 몸통 안의 점은 밖으로, 밖의 점은 그대로', () => {
+    const rig = new PitcherRig();
+    const j = rig.computeJoints(0);
+    const inside = j.pelvis.clone().lerp(j.chest, 0.5);
+    const out = pushOutOfTorso(inside, j, 1.05, 1.0);
+    expect(out.distanceTo(inside)).toBeGreaterThan(0.05);
+    const far = inside.clone().add(new THREE.Vector3(1, 0, 1));
+    expect(pushOutOfTorso(far, j, 1.05, 1.0)).toBe(far);
+  });
+
+  it('타자 스윙 전 구간(로드·타격·팔로스루)에서 손·팔꿈치·팔 중간 지점이 몸통 밖에 있다', () => {
+    const rig = new BatterRig();
+    const check = () => {
+      const j = rig.debugJoints();
+      const pts = [j.handL, j.handR, j.elbowL, j.elbowR];
+      for (const [a, b] of [
+        [j.shoulderL, j.elbowL],
+        [j.elbowL, j.handL],
+        [j.shoulderR, j.elbowR],
+        [j.elbowR, j.handR],
+      ] as [THREE.Vector3, THREE.Vector3][]) {
+        pts.push(a.clone().lerp(b, 0.5));
+      }
+      for (const p of pts) {
+        // 보정 때 margin 1.08~1.15를 쓰므로 1.0(몸통 표면)보다 안쪽이면 실패
+        expect(pushOutOfTorso(p, j, 1, 1.0)).toBe(p);
+      }
+    };
+    for (const target of [{ x: 0, y: 0 }, { x: 1, y: 1 }, { x: -1, y: -1 }]) {
+      for (let load = 0; load <= 1.001; load += 0.25) {
+        rig.loadAt(load);
+        check();
+      }
+      for (let u = 0; u <= 2.001; u += 0.05) {
+        rig.poseAtProgress(target, u, 1);
+        check();
+      }
+    }
+  });
+
+  it('투수 동작 전 구간에서도 팔이 몸통을 뚫지 않는다', () => {
+    const rig = new PitcherRig();
+    for (let tau = 0; tau <= 1.4001; tau += 0.05) {
+      const j = rig.computeJoints(tau);
+      for (const [a, b] of [
+        [j.shoulderL, j.elbowL],
+        [j.elbowL, j.handL],
+        [j.shoulderR, j.elbowR],
+        [j.elbowR, j.handR],
+      ] as [THREE.Vector3, THREE.Vector3][]) {
+        const mid = a.clone().lerp(b, 0.5);
+        expect(pushOutOfTorso(mid, j, 1.05, 1.0)).toBe(mid);
+      }
+    }
   });
 });

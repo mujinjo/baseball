@@ -19,6 +19,34 @@ const fwd = (az: number) => new THREE.Vector3(Math.cos(az), 0, -Math.sin(az));
 const right = (az: number) => new THREE.Vector3(Math.sin(az), 0, Math.cos(az));
 const UP = new THREE.Vector3(0, 1, 0);
 
+/**
+ * 몸통(골반~가슴을 잇는 타원 단면 원기둥) 안으로 파고든 점을 바깥으로 밀어낸다.
+ * 팔·손이 몸을 뚫고 들어가 보이는 문제를 막는다. margin>1이면 몸에서 조금 더 띄운다.
+ */
+export function pushOutOfTorso(p: THREE.Vector3, j: Joints, s: number, margin = 1.12): THREE.Vector3 {
+  const a = j.pelvis;
+  const ab = new THREE.Vector3().subVectors(j.chest, a);
+  const len2 = ab.lengthSq();
+  const t = THREE.MathUtils.clamp(new THREE.Vector3().subVectors(p, a).dot(ab) / len2, 0, 1.05);
+  const c = a.clone().addScaledVector(ab, t);
+  const axis = ab.clone().normalize();
+  const w = new THREE.Vector3().subVectors(j.shoulderR, j.shoulderL);
+  w.addScaledVector(axis, -w.dot(axis)).normalize();
+  const x = new THREE.Vector3().crossVectors(axis, w).normalize();
+  const d = new THREE.Vector3().subVectors(p, c);
+  const dx = d.dot(x);
+  const dw = d.dot(w);
+  // 어깨 쪽(t가 클수록) 몸통이 넓다
+  const rx = 0.125 * s * margin * (1 - 0.18 * (1 - Math.min(1, t)));
+  const rw = 0.2 * s * margin * (1 - 0.18 * (1 - Math.min(1, t)));
+  const q = (dx / rx) ** 2 + (dw / rw) ** 2;
+  if (q >= 1) return p;
+  const k = q < 1e-6 ? 1 / Math.sqrt(1e-6) : 1 / Math.sqrt(q);
+  const nx = q < 1e-6 ? rx : dx * k;
+  const nw = q < 1e-6 ? 0 : dw * k;
+  return c.addScaledVector(x, nx).addScaledVector(w, nw).addScaledVector(axis, d.dot(axis));
+}
+
 export interface RelHand {
   f: number;
   r: number;
@@ -74,12 +102,29 @@ function bodyJoints(o: BodyOpts, j: Joints): Joints {
     h instanceof THREE.Vector3
       ? h
       : j.chest.clone().addScaledVector(fC, h.f * s).addScaledVector(rC, h.r * s).addScaledVector(UP, h.u * s);
-  const handL = resolve(o.handL);
-  const handR = resolve(o.handR);
+  // 손이 몸통을 파고들면 밖으로 밀어낸다
+  const handL = pushOutOfTorso(resolve(o.handL), j, s, 1.08).clone();
+  const handR = pushOutOfTorso(resolve(o.handR), j, s, 1.08).clone();
   j.handL.copy(handL);
   j.handR.copy(handR);
   twoBone(j.shoulderL, handL, 0.3 * s, 0.28 * s, o.poleL ?? new THREE.Vector3(0, -1, 0).addScaledVector(rC, -0.35), j.elbowL);
   twoBone(j.shoulderR, handR, 0.3 * s, 0.28 * s, o.poleR ?? new THREE.Vector3(0, -1, 0).addScaledVector(rC, 0.35), j.elbowR);
+  // 위팔·팔뚝의 중간 지점이 몸통 안이면 팔꿈치를 바깥으로 밀어 팔이 몸을 뚫지 않게 한다
+  for (const [sh, el, hd] of [
+    [j.shoulderL, j.elbowL, handL],
+    [j.shoulderR, j.elbowR, handR],
+  ] as const) {
+    for (let it = 0; it < 3; it++) {
+      for (const [from, to] of [
+        [sh, el],
+        [el, hd],
+      ] as const) {
+        const mid = from.clone().lerp(to, 0.5);
+        const pushed = pushOutOfTorso(mid, j, s, 1.15);
+        if (pushed !== mid) el.addScaledVector(pushed.clone().sub(mid), 2);
+      }
+    }
+  }
   return j;
 }
 
@@ -213,11 +258,9 @@ export class BatterRig {
     const dirW: Point3 = { x: Math.cos(lo) * Math.cos(az), y: Math.cos(lo) * Math.sin(az), z: Math.sin(lo) };
     const dir = toV3(dirW).normalize();
     const hands = toV3(p.hands);
-    // 배트 오브젝트: 노브가 손 뒤쪽 7cm
-    this.bat.position.copy(hands).addScaledVector(dir, 0.0);
-    this.bat.quaternion.setFromUnitVectors(UP, dir);
     // 우타자: 왼손(앞손)이 노브 쪽 아래, 오른손(뒷손)이 그 위를 잡는다
-    const upperHand = hands.clone().addScaledVector(dir, 0.13);
+    let upperHand = hands.clone().addScaledVector(dir, 0.13);
+    let handsAdj = hands;
 
     // 체중 이동과 발: 앞발은 들었다 내디디고(착지 후 고정), 뒷발은 뒤꿈치가 들리며 회전한다
     const st = p.stride;
@@ -230,24 +273,27 @@ export class BatterRig {
     const poleR = new THREE.Vector3(0, -0.45, 0).addScaledVector(cr, 0.9).addScaledVector(cf, -0.35);
     const footL = toV3({ x: BODY.x + 0.02 + 0.05 * st, y: BODY.y + 0.34 + 0.18 * st, z: 0.26 * Math.sin(Math.PI * st) });
     const footR = toV3({ x: BODY.x + 0.12 + 0.04 * hl, y: BODY.y - 0.3 + 0.03 * hl, z: 0.05 * hl });
-    bodyJoints(
-      {
-        base,
-        scale: 1,
-        pelvisYaw: rad(p.pelvisYaw),
-        chestYaw: rad(p.chestYaw),
-        lean: p.lean,
-        crouch: p.crouch,
-        footL,
-        footR,
-        handL: hands,
-        handR: upperHand,
-        headYaw: rad(90),
-        poleL,
-        poleR,
-      },
-      this.joints,
-    );
+    const opts = {
+      base,
+      scale: 1,
+      pelvisYaw: rad(p.pelvisYaw),
+      chestYaw: rad(p.chestYaw),
+      lean: p.lean,
+      crouch: p.crouch,
+      footL,
+      footR,
+      headYaw: rad(90),
+      poleL,
+      poleR,
+    };
+    // 1차: 손이 몸통을 파고들면 밀려난 위치를 얻고, 배트를 그 손에 맞춘다
+    bodyJoints({ ...opts, handL: hands, handR: upperHand }, this.joints);
+    handsAdj = this.joints.handL.clone();
+    upperHand = handsAdj.clone().addScaledVector(dir, 0.13);
+    this.bat.position.copy(handsAdj);
+    this.bat.quaternion.setFromUnitVectors(UP, dir);
+    // 2차: 보정된 손으로 팔을 다시 계산
+    bodyJoints({ ...opts, handL: handsAdj, handR: upperHand }, this.joints);
     this.humanoid.update(this.joints);
   }
 
@@ -300,6 +346,11 @@ export class BatterRig {
       // 타격 → 투수 쪽으로 쭉 뻗고(0~0.45) → 몸 앞으로 감아 왼쪽 어깨 뒤로 감겨 올라간다(0.4~1)
       this.setPose(t <= 0.45 ? lerpPose(c, FOLLOW, smooth(0, 0.45, t)) : lerpPose(FOLLOW, WRAP, smooth(0.4, 1, t)));
     }
+  }
+
+  /** 테스트/디버깅용: 현재 관절 */
+  debugJoints(): Joints {
+    return this.joints;
   }
 
   reset() {
