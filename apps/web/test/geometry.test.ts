@@ -3,7 +3,10 @@ import { isInZone, PITCH_TYPES, DEFAULT_PITCH_PARAMS } from '@baseball/core';
 import {
   BREAK_OFFSET,
   ZONE_CENTER,
-  ZONE_SCALE,
+  GROUND_Y,
+  PX_PER_INCH,
+  ZONE_SCALE_X,
+  ZONE_SCALE_Y,
   ballAt,
   flightMs,
   gaugeAccuracy,
@@ -16,8 +19,20 @@ import { describeOutcome } from '../src/game/messages';
 describe('좌표 변환', () => {
   it('존 중앙은 화면의 존 중심, 위쪽(+y)은 화면 위쪽', () => {
     expect(toScreen({ x: 0, y: 0 })).toEqual(ZONE_CENTER);
-    expect(toScreen({ x: 0, y: 1 }).y).toBe(ZONE_CENTER.y - ZONE_SCALE);
-    expect(toScreen({ x: 1, y: 0 }).x).toBe(ZONE_CENTER.x + ZONE_SCALE);
+    expect(toScreen({ x: 0, y: 1 }).y).toBe(ZONE_CENTER.y - ZONE_SCALE_Y);
+    expect(toScreen({ x: 1, y: 0 }).x).toBe(ZONE_CENTER.x + ZONE_SCALE_X);
+  });
+});
+
+describe('실제 비율', () => {
+  it('존 폭은 홈플레이트 폭(17인치)이고 높이는 폭보다 크다', () => {
+    expect(PX_PER_INCH * 17).toBeCloseTo(ZONE_SCALE_X * 2);
+    expect(ZONE_SCALE_Y).toBeGreaterThan(ZONE_SCALE_X);
+  });
+  it('존 아래쪽은 바닥에서 약 20인치 위', () => {
+    const zoneBottom = ZONE_CENTER.y + ZONE_SCALE_Y;
+    expect((GROUND_Y - zoneBottom) / PX_PER_INCH).toBeGreaterThan(17);
+    expect((GROUND_Y - zoneBottom) / PX_PER_INCH).toBeLessThan(24);
   });
 });
 

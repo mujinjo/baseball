@@ -1,13 +1,22 @@
 import type { Location, PitchType } from '@baseball/core';
 
-/** 존 좌표(중앙 0,0 / 경계 ±1) ↔ 화면 좌표 변환. 포수 시점 고정 카메라 */
-export const ZONE_CENTER = { x: 270, y: 480 };
-export const ZONE_SCALE = 70;
-export const RELEASE_POINT = { x: 270, y: 240 };
+/**
+ * 존 좌표(중앙 0,0 / 경계 ±1) ↔ 화면 좌표 변환. 포수 뒤에서 본 고정 카메라.
+ * 존의 폭은 홈플레이트 폭(17인치)과 같고, 높이는 약 24인치(폭의 1.41배)라 가로·세로 배율이 다르다.
+ */
+export const ZONE_CENTER = { x: 270, y: 470 };
+export const ZONE_SCALE_X = 60;
+export const ZONE_SCALE_Y = 84;
+/** 홈플레이트 높이에서 1인치가 차지하는 픽셀 */
+export const PX_PER_INCH = (ZONE_SCALE_X * 2) / 17;
+/** 홈플레이트(바닥) 깊이의 화면 y. 존 아래쪽(무릎, 바닥에서 약 20인치) 아래에 있다 */
+export const GROUND_Y = 682;
+/** 투수가 공을 놓는 지점(마운드 위, 화면상 아주 작게 보임) */
+export const RELEASE_POINT = { x: 270, y: 262 };
 
 export const toScreen = (l: Location) => ({
-  x: ZONE_CENTER.x + l.x * ZONE_SCALE,
-  y: ZONE_CENTER.y - l.y * ZONE_SCALE,
+  x: ZONE_CENTER.x + l.x * ZONE_SCALE_X,
+  y: ZONE_CENTER.y - l.y * ZONE_SCALE_Y,
 });
 
 export { GRID_EDGES, gridCells, type GridCell } from '@baseball/core';
@@ -32,7 +41,7 @@ export function ballAt(t: number, actual: Location, type: PitchType) {
   return {
     x: RELEASE_POINT.x + (target.x - RELEASE_POINT.x) * c,
     y: RELEASE_POINT.y + (target.y - RELEASE_POINT.y) * c,
-    r: 3 + 8 * c * c,
+    r: 2 + 8 * c * c,
   };
 }
 

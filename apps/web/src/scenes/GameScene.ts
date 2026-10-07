@@ -26,16 +26,20 @@ import {
 import { ko } from '../i18n/ko';
 import { Button } from '../ui/Button';
 import { Scoreboard } from '../ui/Scoreboard';
+import { Batter, SWING_CONTACT_MS } from '../ui/Batter';
 import { FieldView } from '../ui/FieldView';
 import { ZoneGrid } from '../ui/ZoneGrid';
 import {
+  GROUND_Y,
   RELEASE_POINT,
   ZONE_CENTER,
-  ZONE_SCALE,
+  ZONE_SCALE_X,
+  ZONE_SCALE_Y,
   ballAt,
   flightMs,
   gaugeAccuracy,
   gaugePosition,
+  toScreen,
 } from '../game/geometry';
 import { describeOutcome } from '../game/messages';
 import type { GameOptions } from './TitleScene';
@@ -55,9 +59,6 @@ const THROW_DELAY_MS = 250;
 /** 사람 타자는 공 도착 후에도 이 시간 안에 누르면 스윙으로 인정 */
 const LATE_GRACE_MS = 150;
 const RESULT_HOLD_MS = 2000;
-const BAT_REST = -15;
-/** 타자(우타자, 포수 시점에서 왼쪽에 선다)의 위치. 손 위치가 배트 축 */
-const BATTER = { x: 95, hands: { x: 150, y: 440 } };
 const PITCHER_COLOR = 0xff9933;
 
 const now = () => performance.now();
@@ -77,7 +78,7 @@ export class GameScene extends Phaser.Scene {
   private titleText!: Phaser.GameObjects.Text;
   private subText!: Phaser.GameObjects.Text;
   private ball!: Phaser.GameObjects.Arc;
-  private bat!: Phaser.GameObjects.Rectangle;
+  private batter!: Batter;
   private fieldView!: FieldView;
 
   // 투수 패널
@@ -133,12 +134,12 @@ export class GameScene extends Phaser.Scene {
       .setOrigin(0.5, 0)
       .setDepth(60);
     this.hintText = this.add
-      .text(270, 682, '', { fontSize: '17px', color: '#cfe8cf', align: 'center', wordWrap: { width: 500 } })
+      .text(270, 714, '', { fontSize: '16px', color: '#cfe8cf', align: 'center', wordWrap: { width: 520 } })
       .setOrigin(0.5, 0);
 
     this.grid = new ZoneGrid(this, (cell) => this.onCourseSelected(cell.center));
     this.ball = this.add.circle(0, 0, 5, 0xffffff).setStrokeStyle(2, 0xcc3333).setVisible(false).setDepth(5);
-    this.bat = this.add.rectangle(BATTER.hands.x, BATTER.hands.y, 9, 130, 0xc8a165).setOrigin(0.5, 1).setAngle(BAT_REST).setDepth(6);
+    this.batter = new Batter(this);
     this.fieldView = new FieldView(this);
 
     this.buildPitcherPanel();
@@ -153,32 +154,88 @@ export class GameScene extends Phaser.Scene {
   }
 
   // ───────── 배경 ─────────
+  /**
+   * 포수 뒤에서 본 구장. 원근법: 멀리 마운드와 외야 펜스, 가까이 홈플레이트와 타석.
+   * 홈플레이트 폭이 스트라이크존 폭과 같고, 우타자가 왼쪽 타석 박스에 선다.
+   */
   private drawField() {
     const g = this.add.graphics();
+    const cx = ZONE_CENTER.x;
     g.fillStyle(0x16331f, 1).fillRect(0, 0, 540, 960);
-    g.fillStyle(0x1f4a2b, 1).fillRect(0, 200, 540, 520);
-    g.fillStyle(0x8a6a3a, 1).fillEllipse(RELEASE_POINT.x, RELEASE_POINT.y + 12, 70, 22);
-    g.fillStyle(0xdddddd, 1).fillCircle(RELEASE_POINT.x, RELEASE_POINT.y - 22, 8);
-    g.fillStyle(0x3366aa, 1).fillRect(RELEASE_POINT.x - 7, RELEASE_POINT.y - 14, 14, 24);
-    g.fillStyle(0x6b5230, 0.55).fillEllipse(ZONE_CENTER.x, ZONE_CENTER.y + 105, 400, 130);
-    this.drawBatter(g);
-    g.lineStyle(3, 0xffffff, 0.9).strokeRect(
-      ZONE_CENTER.x - ZONE_SCALE,
-      ZONE_CENTER.y - ZONE_SCALE,
-      ZONE_SCALE * 2,
-      ZONE_SCALE * 2,
+    // 관중석과 외야 펜스
+    g.fillStyle(0x232a45, 1).fillRect(0, 165, 540, 52);
+    for (let i = 0; i < 90; i++) g.fillStyle(0x4a5278, 0.8).fillRect((i * 37) % 540, 172 + ((i * 53) % 38), 3, 3);
+    g.fillStyle(0x1d3a6b, 1).fillRect(0, 217, 540, 14);
+    // 외야 잔디(멀리서부터 줄무늬)
+    for (let i = 0; i < 8; i++) {
+      const y0 = 231 + i * i * 4 + i * 20;
+      const y1 = 231 + (i + 1) * (i + 1) * 4 + (i + 1) * 20;
+      g.fillStyle(i % 2 ? 0x2f7040 : 0x2a6a38, 1).fillRect(0, y0, 540, Math.min(y1, 740) - y0);
+    }
+    // 내야 흙: 마운드 부근에서 홈 쪽으로 넓어진다
+    g.fillStyle(0x94703f, 1).fillPoints(
+      [
+        { x: cx - 78, y: 286 },
+        { x: cx + 78, y: 286 },
+        { x: 585, y: 560 },
+        { x: 585, y: 760 },
+        { x: -45, y: 760 },
+        { x: -45, y: 560 },
+      ],
+      true,
     );
-  }
-
-  /** 타자: 스트라이크존(무릎~가슴)의 2배쯤 되는 키로 그려 존의 상대적 크기를 보여준다 */
-  private drawBatter(g: Phaser.GameObjects.Graphics) {
-    const { x, hands } = BATTER;
-    g.fillStyle(0x2c2c3a, 1).fillRect(x - 18, 468, 14, 134).fillRect(x + 4, 468, 14, 134); // 다리
-    g.fillStyle(0xcc4444, 1).fillRect(x - 22, 352, 44, 120); // 상체
-    g.lineStyle(10, 0xcc4444, 1).lineBetween(x + 14, 372, hands.x, hands.y); // 팔
-    g.fillStyle(0xf0c9a0, 1).fillCircle(hands.x, hands.y, 7); // 손
-    g.fillStyle(0xf0c9a0, 1).fillCircle(x, 332, 17); // 얼굴
-    g.fillStyle(0x224488, 1).fillRect(x - 19, 312, 38, 14); // 헬멧
+    // 홈 주변 흙 원
+    g.fillStyle(0x86663a, 1).fillEllipse(cx, GROUND_Y - 6, 560, 190);
+    // 마운드와 투수
+    const mound = { x: RELEASE_POINT.x, y: RELEASE_POINT.y + 34 };
+    g.fillStyle(0xa8834c, 1).fillEllipse(mound.x, mound.y, 64, 13);
+    g.fillStyle(0xffffff, 1).fillRect(mound.x - 5, mound.y - 4, 10, 2);
+    g.fillStyle(0xe6b88f, 1).fillCircle(mound.x, mound.y - 42, 4); // 머리
+    g.fillStyle(0xd9d9e0, 1).fillRect(mound.x - 5, mound.y - 37, 10, 17); // 상의
+    g.fillStyle(0x2c2c3a, 1).fillRect(mound.x - 5, mound.y - 20, 10, 18); // 하의
+    g.fillStyle(0x16224a, 1).fillRect(mound.x - 5, mound.y - 47, 10, 4); // 모자
+    // 파울 라인: 홈플레이트 뒤쪽 모서리에서 좌우 외야로 뻗는다
+    g.lineStyle(3, 0xffffff, 0.9)
+      .lineBetween(cx - 60, GROUND_Y - 4, -10, 470)
+      .lineBetween(cx + 60, GROUND_Y - 4, 550, 470);
+    // 타석 박스 (4×6피트, 홈플레이트에서 6인치 띄움)
+    const boxIn = 60 + 6 * ((ZONE_SCALE_X * 2) / 17);
+    g.lineStyle(3, 0xffffff, 0.85);
+    for (const side of [-1, 1]) {
+      const inner = cx + side * boxIn;
+      const outer = side < 0 ? -20 : 560;
+      g.strokePoints(
+        [
+          { x: inner, y: GROUND_Y - 74 },
+          { x: outer, y: GROUND_Y - 82 },
+          { x: outer, y: GROUND_Y + 70 },
+          { x: inner, y: GROUND_Y + 62 },
+          { x: inner, y: GROUND_Y - 74 },
+        ],
+        true,
+      );
+    }
+    // 홈플레이트: 폭 = 스트라이크존 폭. 평평한 변이 투수 쪽(위)
+    const half = ZONE_SCALE_X;
+    const plate = [
+      { x: cx - half, y: GROUND_Y - 14 },
+      { x: cx + half, y: GROUND_Y - 14 },
+      { x: cx + half, y: GROUND_Y + 4 },
+      { x: cx, y: GROUND_Y + 24 },
+      { x: cx - half, y: GROUND_Y + 4 },
+    ];
+    g.fillStyle(0xf4f4f4, 1).fillPoints(plate, true);
+    g.lineStyle(2, 0x555555, 1).strokePoints(plate, true);
+    // 스트라이크존 테두리 (바닥에서 약 20인치 위 ~ 가슴 높이)
+    g.lineStyle(3, 0xffffff, 0.9).strokeRect(
+      ZONE_CENTER.x - ZONE_SCALE_X,
+      ZONE_CENTER.y - ZONE_SCALE_Y,
+      ZONE_SCALE_X * 2,
+      ZONE_SCALE_Y * 2,
+    );
+    // 하단 조작 영역 배경
+    g.fillStyle(0x10261a, 1).fillRect(0, 742, 540, 218);
+    g.lineStyle(2, 0x2d4a35, 1).lineBetween(0, 742, 540, 742);
   }
 
   // ───────── 투수 패널 ─────────
@@ -229,7 +286,7 @@ export class GameScene extends Phaser.Scene {
     this.ball.setVisible(false);
     this.titleText.setText('');
     this.subText.setText('');
-    this.bat.setAngle(BAT_REST);
+    this.batter.reset();
     this.grid.clear();
     this.grid.setEnabled(false);
   }
@@ -300,7 +357,9 @@ export class GameScene extends Phaser.Scene {
     if (this.humanPitching) {
       // 컴퓨터 타자: 공을 보고 스윙 여부와 타이밍을 정한다
       const a = aiBatterAction(this.previewLoc, this.gs.strikes, this.level, this.rng);
-      this.flight = { start, dur, swingAt: a.swing ? start + dur + a.timingMs : null, aiDecided: true, batSwung: false };
+      // timingMs는 배트가 닿는 시점 기준이므로, 스윙 시작은 그만큼 앞선다
+      const swingAt = a.swing ? Math.max(start, start + dur + a.timingMs - SWING_CONTACT_MS) : null;
+      this.flight = { start, dur, swingAt, aiDecided: true, batSwung: false };
       this.hintText.setText('');
     } else {
       this.flight = { start, dur, swingAt: null, aiDecided: false, batSwung: false };
@@ -330,15 +389,16 @@ export class GameScene extends Phaser.Scene {
 
     if (f.swingAt !== null && !f.batSwung && now() >= f.swingAt) {
       f.batSwung = true;
-      this.tweens.add({ targets: this.bat, angle: { from: BAT_REST, to: 110 }, duration: 140 });
+      this.batter.swing(toScreen(this.previewLoc));
     }
 
     const arrival = f.start + f.dur;
-    const done = f.aiDecided
-      ? now() >= (f.swingAt !== null ? Math.max(arrival, f.swingAt) : arrival)
-      : f.swingAt !== null
-        ? now() >= arrival
-        : now() >= arrival + LATE_GRACE_MS;
+    const contactAt = f.swingAt !== null ? f.swingAt + SWING_CONTACT_MS : null;
+    // 스윙했다면 공 도착과 배트 접촉 중 늦은 쪽에서 판정한다. 사람 타자는 도착 후 잠깐 더 기다려 준다
+    const done =
+      contactAt !== null
+        ? now() >= Math.max(arrival, contactAt)
+        : now() >= (f.aiDecided ? arrival : arrival + LATE_GRACE_MS);
     if (done) this.resolve();
   }
 
@@ -352,7 +412,8 @@ export class GameScene extends Phaser.Scene {
     this.roleText.setText('');
 
     const swing = f.swingAt !== null;
-    const timingMs = swing ? f.swingAt! - (f.start + f.dur) : 0;
+    // 판정 기준: 배트가 닿는 시점이 공 도착 시점보다 얼마나 빠른지/늦은지
+    const timingMs = swing ? f.swingAt! + SWING_CONTACT_MS - (f.start + f.dur) : 0;
     const action: BatterAction = { swing, timingMs };
     const detail = resolvePitch(pitch, action, AVERAGE_PITCHER, AVERAGE_BATTER, this.rng, DEFAULT_PITCH_PARAMS, actual);
     const out = applyPitch(this.gs, detail.event, this.rng);
