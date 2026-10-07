@@ -1,0 +1,74 @@
+import type { Location, PitchType } from '@baseball/core';
+
+/** 존 좌표(중앙 0,0 / 경계 ±1) ↔ 화면 좌표 변환. 포수 시점 고정 카메라 */
+export const ZONE_CENTER = { x: 270, y: 500 };
+export const ZONE_SCALE = 100;
+export const RELEASE_POINT = { x: 270, y: 240 };
+
+export const toScreen = (l: Location) => ({
+  x: ZONE_CENTER.x + l.x * ZONE_SCALE,
+  y: ZONE_CENTER.y - l.y * ZONE_SCALE,
+});
+
+/** 5×5 코스 격자의 경계: 안쪽 3×3이 스트라이크존, 바깥 한 겹이 볼존 */
+export const GRID_EDGES = [-1.7, -1, -1 / 3, 1 / 3, 1, 1.7] as const;
+
+export interface GridCell {
+  col: number;
+  /** 0 = 맨 위(높은 공) */
+  row: number;
+  center: Location;
+  inZone: boolean;
+}
+
+export function gridCells(): GridCell[] {
+  const cells: GridCell[] = [];
+  for (let row = 0; row < 5; row++) {
+    for (let col = 0; col < 5; col++) {
+      const x0 = GRID_EDGES[col]!;
+      const x1 = GRID_EDGES[col + 1]!;
+      const yTop = -GRID_EDGES[row]!;
+      const yBottom = -GRID_EDGES[row + 1]!;
+      cells.push({
+        col,
+        row,
+        center: { x: (x0 + x1) / 2, y: (yTop + yBottom) / 2 },
+        inZone: col >= 1 && col <= 3 && row >= 1 && row <= 3,
+      });
+    }
+  }
+  return cells;
+}
+
+/** 공이 날아오는 시간(ms). 느린 구종일수록 오래 걸린다 */
+export const flightMs = (speedKmh: number) => 1000 + (150 - speedKmh) * 10;
+
+/** 변화구의 눈속임: 공이 처음엔 이 오프셋만큼 벗어난 곳을 향하다 막판에 실제 위치로 꺾인다 */
+export const BREAK_OFFSET: Record<PitchType, Location> = {
+  fastball: { x: 0, y: -0.35 },
+  slider: { x: 0.9, y: 0.2 },
+  curve: { x: 0.2, y: 0.9 },
+  changeup: { x: 0, y: -0.15 },
+};
+
+/** t(0~1) 시점의 공 화면 위치와 반지름 */
+export function ballAt(t: number, actual: Location, type: PitchType) {
+  const c = Math.min(1, Math.max(0, t));
+  const off = BREAK_OFFSET[type];
+  const k = 1 - Math.pow(c, 2.5);
+  const target = toScreen({ x: actual.x + off.x * k, y: actual.y + off.y * k });
+  return {
+    x: RELEASE_POINT.x + (target.x - RELEASE_POINT.x) * c,
+    y: RELEASE_POINT.y + (target.y - RELEASE_POINT.y) * c,
+    r: 4 + 11 * c * c,
+  };
+}
+
+/** 게이지 위치(0~1, 0.5가 정중앙) → 제구 정확도(0~1) */
+export const gaugeAccuracy = (pos: number) => Math.max(0, 1 - Math.abs(pos - 0.5) * 2);
+
+/** 시간(ms)에 따라 0→1→0으로 왕복하는 게이지 위치 */
+export function gaugePosition(elapsedMs: number, periodMs = 1400) {
+  const p = (elapsedMs % periodMs) / periodMs;
+  return p < 0.5 ? p * 2 : 2 - p * 2;
+}

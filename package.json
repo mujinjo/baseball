@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "npm run dev -w @baseball/web",
     "build": "npm run build -w @baseball/web",
-    "test": "npm run test -w @baseball/core",
+    "test": "npm run test -w @baseball/core && npm run test -w @baseball/web",
     "typecheck": "npm run typecheck -w @baseball/core && npm run typecheck -w @baseball/web"
   },
   "devDependencies": {

@@ -70,4 +70,5 @@
 - [x] M0 프로젝트 세팅
 - [x] M1 규칙·자동 주루 엔진
 - [x] M2 투구 판정 엔진 + 밸런스 시뮬레이션 (`npm run simulate -w @baseball/core`)
-- [ ] M3 이후
+- [x] M3 포수 시점 UI + 로컬 2인 핫시트 대전 (`npm run dev`)
+- [ ] M4 AI 상대

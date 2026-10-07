@@ -119,9 +119,11 @@ export function resolvePitch(
   batter: BatterStats,
   rng: Rng,
   params: PitchParams = DEFAULT_PITCH_PARAMS,
+  /** 이미 확정된 실제 투구 위치. 주면 제구 오차를 다시 뽑지 않는다 (UI가 비행 중 위치를 먼저 보여줄 때 사용) */
+  fixedActual?: Location,
 ): PitchDetail {
   const spec = params.types[pitch.pitchType];
-  const actual = throwLocation(pitch, pitcher, rng, params);
+  const actual = fixedActual ?? throwLocation(pitch, pitcher, rng, params);
   const inZone = isInZone(actual);
   const base = { actual, inZone, speed: spec.speed };
 
