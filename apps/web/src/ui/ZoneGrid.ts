@@ -55,6 +55,9 @@ export class ZoneGrid {
   }
 
   private render() {
+    // 타자 화면에서는 격자를 숨기고 존 테두리만 보이게 한다
+    const visible = this.enabled || this.selected !== null;
+    this.rects.forEach((r) => r.setVisible(visible));
     this.cells.forEach((cell, i) => {
       const isSel = this.selected === cell;
       const base = cell.inZone ? 0.12 : 0.04;

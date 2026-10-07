@@ -1,26 +1,27 @@
 import type { Location, PitchType } from '@baseball/core';
 
 /**
- * 존 좌표(중앙 0,0 / 경계 ±1) ↔ 화면 좌표 변환. 포수 뒤에서 본 고정 카메라.
- * 존의 폭은 홈플레이트 폭(17인치)과 같고, 높이는 약 24인치(폭의 1.41배)라 가로·세로 배율이 다르다.
+ * 존 좌표(중앙 0,0 / 경계 ±1) ↔ 화면 좌표 변환. 타자 뒤쪽 낮은 곳에서 투수를 바라보는 고정 카메라.
+ * 존의 폭은 홈플레이트 폭(17인치)과 같고, 높이는 폭의 약 1.4배라 가로·세로 배율이 다르다.
+ * 홈플레이트는 화면 오른쪽 아래, 존은 마운드 위에 겹쳐 보인다(타자가 왼쪽 화면 가장자리를 크게 차지).
  */
-export const ZONE_CENTER = { x: 270, y: 470 };
-export const ZONE_SCALE_X = 60;
-export const ZONE_SCALE_Y = 84;
+export const ZONE_CENTER = { x: 336, y: 524 };
+export const ZONE_SCALE_X = 58;
+export const ZONE_SCALE_Y = 82;
 /** 홈플레이트 높이에서 1인치가 차지하는 픽셀 */
 export const PX_PER_INCH = (ZONE_SCALE_X * 2) / 17;
-/** 홈플레이트(바닥) 깊이의 화면 y. 존 아래쪽(무릎, 바닥에서 약 18인치) 아래에 있다 */
-export const GROUND_Y = 682;
-/** 투수가 공을 놓는 지점(마운드 위, 화면상 작게 보임) */
-export const RELEASE_POINT = { x: 270, y: 272 };
+/** 홈플레이트(바닥) 깊이의 화면 y */
+export const GROUND_Y = 784;
+/** 투수가 공을 놓는 지점(마운드 위 투수의 손 높이) */
+export const RELEASE_POINT = { x: 336, y: 484 };
 
 // ───── 3D → 화면 투영 ─────
-// 카메라는 홈플레이트 뒤쪽 위에서 투수 쪽을 수평으로 본다. 월드 좌표(m): x=오른쪽(1루), y=투수 쪽, z=위, 원점=홈플레이트 중앙 바닥.
-// 홈플레이트(폭 0.432m)가 존 폭(120px)과 같도록 초점거리를 잡는다.
+// 카메라는 홈플레이트 3.2m 뒤, 높이 1.1m에서 투수 쪽을 수평으로 본다. 월드 좌표(m): x=오른쪽(1루), y=투수 쪽, z=위, 원점=홈플레이트 중앙 바닥.
+// 홈플레이트(폭 0.432m)가 존 폭과 같도록 초점거리를 잡는다. 소실점은 홈플레이트 바로 위(투수 방향)다.
 export const PLATE_WIDTH_M = 0.432;
 export const PX_PER_M = (ZONE_SCALE_X * 2) / PLATE_WIDTH_M;
-export const CAM_HEIGHT_M = 1.6;
-export const CAM_BEHIND_M = 5.05;
+export const CAM_HEIGHT_M = 1.1;
+export const CAM_BEHIND_M = 3.2;
 export const FOCAL_PX = PX_PER_M * CAM_BEHIND_M;
 export const HORIZON_Y = GROUND_Y - PX_PER_M * CAM_HEIGHT_M;
 
@@ -40,9 +41,9 @@ export function project(p: Point3) {
   };
 }
 
-/** 존 좌표(±1이 존 경계) → 홈플레이트 위 공간의 월드 좌표. 존 높이는 약 0.46~1.07m */
-export const ZONE_CENTER_Z_M = 0.76;
-export const ZONE_HALF_HEIGHT_M = 0.305;
+/** 존 좌표(±1이 존 경계) → 홈플레이트 위 공간의 월드 좌표. 화면에서 보기 좋도록 존을 실제보다 조금 높게(0.64~1.26m) 둔다 */
+export const ZONE_CENTER_Z_M = 0.95;
+export const ZONE_HALF_HEIGHT_M = 0.31;
 export const zoneToWorld = (l: Location): Point3 => ({
   x: (l.x * PLATE_WIDTH_M) / 2,
   y: 0.05,

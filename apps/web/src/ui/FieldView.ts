@@ -8,7 +8,7 @@ const HOME = { x: 270, y: 790 };
 const SCALE = 3.2;
 /** 공 높이 1m당 화면 위로 띄우는 픽셀 */
 const HEIGHT_PX = 2.2;
-const TOP = 200;
+const TOP = 108;
 
 export const toField = (angleDeg: number, distM: number) => {
   const a = (angleDeg * Math.PI) / 180;

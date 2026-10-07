@@ -31,10 +31,15 @@ describe('실제 비율', () => {
     expect(PX_PER_INCH * 17).toBeCloseTo(ZONE_SCALE_X * 2);
     expect(ZONE_SCALE_Y).toBeGreaterThan(ZONE_SCALE_X);
   });
-  it('존 아래쪽은 바닥에서 약 20인치 위', () => {
+  it('존 아래쪽은 바닥에서 20~30인치 위', () => {
     const zoneBottom = ZONE_CENTER.y + ZONE_SCALE_Y;
-    expect((GROUND_Y - zoneBottom) / PX_PER_INCH).toBeGreaterThan(17);
-    expect((GROUND_Y - zoneBottom) / PX_PER_INCH).toBeLessThan(24);
+    expect((GROUND_Y - zoneBottom) / PX_PER_INCH).toBeGreaterThan(20);
+    expect((GROUND_Y - zoneBottom) / PX_PER_INCH).toBeLessThan(30);
+  });
+  it('존이 마운드(투수) 높이에 겹쳐 보인다', () => {
+    const mound = project({ x: 0, y: 18.44, z: 0 });
+    expect(Math.abs(mound.y - ZONE_CENTER.y)).toBeLessThan(ZONE_SCALE_Y);
+    expect(Math.abs(mound.x - ZONE_CENTER.x)).toBeLessThan(ZONE_SCALE_X * 2);
   });
 });
 

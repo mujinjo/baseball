@@ -6,11 +6,11 @@ import { project, zoneToWorld, type Point3 } from '../game/geometry';
 export const SWING_CONTACT_MS = 120;
 const FOLLOW_THROUGH_MS = 160;
 
-// ───── 우타자 3D 모델 (단위 m, 키 1.65m로 약간 줄임) ─────
-// 월드: x=오른쪽(1루), y=투수 쪽, z=위. 우타자는 포수 뒤에서 볼 때 홈플레이트 왼쪽(3루 쪽)에 서서 홈플레이트를 향한다.
-const BODY_X = -0.72;
+// ───── 우타자 3D 모델 (단위 m) ─────
+// 월드: x=오른쪽(1루), y=투수 쪽, z=위. 우타자는 홈플레이트 왼쪽(3루 쪽) 타석에 서서 홈플레이트를 향한다.
+// 카메라가 바로 뒤에 있어 등과 오른쪽 옆모습이 크게 보인다.
+const BODY = { x: -0.8, y: -0.3 };
 const BAT_LEN = 0.84;
-const SHOULDER = { x: BODY_X + 0.05, y: -0.08, z: 1.36 };
 
 interface Pose {
   hands: Point3;
@@ -20,24 +20,21 @@ interface Pose {
   loft: number;
 }
 
-/** 준비 자세: 배트를 어깨 뒤(포수 쪽)로 세워 든다 */
-const STANCE: Pose = { hands: { x: -0.62, y: -0.30, z: 1.12 }, azimuth: -105, loft: 44 };
+/** 준비 자세: 배트를 얼굴 앞쪽에 거의 수직으로 세워 든다 */
+const STANCE: Pose = { hands: { x: -0.55, y: -0.42, z: 1.36 }, azimuth: -100, loft: 72 };
 /** 타격 후 마무리: 몸 앞(투수 쪽)으로 감아 올린다 */
-const FOLLOW: Pose = { hands: { x: -0.30, y: 0.42, z: 1.12 }, azimuth: 118, loft: 38 };
-const CONTACT_HANDS: Point3 = { x: -0.5, y: -0.02, z: 0.98 };
+const FOLLOW: Pose = { hands: { x: -0.22, y: 0.32, z: 1.22 }, azimuth: 120, loft: 36 };
+const CONTACT_HANDS: Point3 = { x: -0.45, y: -0.1, z: 1.05 };
 
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 const lerp3 = (a: Point3, b: Point3, t: number): Point3 => ({ x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t), z: lerp(a.z, b.z, t) });
 const rad = (d: number) => (d * Math.PI) / 180;
+const add = (a: Point3, b: Point3): Point3 => ({ x: a.x + b.x, y: a.y + b.y, z: a.z + b.z });
 
-/** 방향 각도(azimuth, loft)와 길이로 배트 끝 월드 좌표를 구한다 */
-function batTip(p: Pose): Point3 {
+/** 배트 방향 단위벡터 */
+function batDir(p: Pose): Point3 {
   const c = Math.cos(rad(p.loft));
-  return {
-    x: p.hands.x + BAT_LEN * c * Math.cos(rad(p.azimuth)),
-    y: p.hands.y + BAT_LEN * c * Math.sin(rad(p.azimuth)),
-    z: p.hands.z + BAT_LEN * Math.sin(rad(p.loft)),
-  };
+  return { x: c * Math.cos(rad(p.azimuth)), y: c * Math.sin(rad(p.azimuth)), z: Math.sin(rad(p.loft)) };
 }
 
 /** 포수 뒤에서 본 우타자와 배트. 몸과 배트를 3D로 만들어 같은 카메라로 투영한다 */
@@ -56,56 +53,139 @@ export class Batter {
     this.pose(STANCE);
   }
 
-  private drawBody() {
-    const g = this.body;
-    const P = (x: number, y: number, z: number) => project({ x: BODY_X + x, y, z });
-    const line = (w: number, color: number, a: Point3, b: Point3) => {
-      const pa = project(a);
-      const pb = project(b);
-      g.lineStyle(w * pa.scale, color, 1).lineBetween(pa.x, pa.y, pb.x, pb.y);
-    };
-    // 다리: 어깨너비로 벌려 홈플레이트를 향해 선 자세 (한 발은 투수 쪽, 한 발은 포수 쪽)
-    const legColor = 0x2c2c3a;
-    line(0.17, legColor, { x: BODY_X + 0.05, y: 0.28, z: 0.05 }, { x: BODY_X + 0.03, y: 0.14, z: 0.88 });
-    line(0.17, legColor, { x: BODY_X + 0.05, y: -0.28, z: 0.05 }, { x: BODY_X + 0.03, y: -0.12, z: 0.88 });
-    for (const y of [0.28, -0.28]) {
-      const f = project({ x: BODY_X + 0.1, y, z: 0.03 });
-      g.fillStyle(0x111111, 1).fillRoundedRect(f.x - 0.16 * f.scale, f.y - 0.03 * f.scale, 0.3 * f.scale, 0.06 * f.scale, 3);
-    }
-    // 상체(옆모습: 홈플레이트 쪽을 향함)
-    const hipL = P(-0.13, 0, 0.88);
-    const hipR = P(0.13, 0, 0.88);
-    const shL = P(-0.12, -0.02, 1.38);
-    const shR = P(0.12, -0.02, 1.38);
-    g.fillStyle(0xd9d9e0, 1).fillPoints([hipL, hipR, shR, shL], true);
-    g.fillStyle(0x16224a, 1).fillRect(hipL.x, hipL.y - 8, hipR.x - hipL.x, 8); // 허리띠
-    // 목과 머리
-    const neck = P(0, -0.02, 1.43);
-    g.fillStyle(0xe6b88f, 1).fillCircle(neck.x, neck.y, 7);
-    const head = project({ x: BODY_X + 0.06, y: 0, z: 1.53 });
-    g.fillStyle(0xe6b88f, 1).fillCircle(head.x, head.y, 0.11 * head.scale);
-    // 헬멧: 머리 윗부분과 귀 보호대
-    g.fillStyle(0x16224a, 1).fillCircle(head.x - 2, head.y - 0.03 * head.scale, 0.125 * head.scale);
-    g.fillStyle(0xe6b88f, 1).fillRect(head.x + 2, head.y - 0.02 * head.scale, 0.1 * head.scale, 0.12 * head.scale);
-    g.fillStyle(0x16224a, 1).fillRect(head.x + 4, head.y - 0.045 * head.scale, 0.12 * head.scale, 0.03 * head.scale); // 챙
+  /** 선분 형태의 팔다리: 두께(m)를 그 지점의 원근 배율로 그리고 양 끝을 둥글게 */
+  private limb(g: Phaser.GameObjects.Graphics, a: Point3, b: Point3, w: number, color: number, alpha = 1) {
+    const pa = project(a);
+    const pb = project(b);
+    g.lineStyle(w * ((pa.scale + pb.scale) / 2), color, alpha).lineBetween(pa.x, pa.y, pb.x, pb.y);
+    g.fillStyle(color, alpha).fillCircle(pa.x, pa.y, (w * pa.scale) / 2).fillCircle(pb.x, pb.y, (w * pb.scale) / 2);
   }
 
-  /** 배트와 팔을 현재 자세로 그린다 */
+  private drawBody() {
+    const g = this.body;
+    const X = BODY.x;
+    const Y = BODY.y;
+    // 바닥 그림자
+    const sh = project({ x: X, y: Y, z: 0 });
+    g.fillStyle(0x000000, 0.28).fillEllipse(sh.x + 14, sh.y, 1.1 * sh.scale, 0.28 * sh.scale);
+
+    // 다리(흰 바지): 어깨너비로 벌리고 무릎을 살짝 굽힌 스탠스
+    const pants = 0xeceef2;
+    const shade = 0xc9ced8;
+    const hipL = { x: X - 0.14, y: Y, z: 0.98 };
+    const hipR = { x: X + 0.16, y: Y, z: 0.98 };
+    const kneeL = { x: X - 0.2, y: Y + 0.04, z: 0.52 };
+    const kneeR = { x: X + 0.24, y: Y + 0.04, z: 0.52 };
+    const footL = { x: X - 0.2, y: Y + 0.06, z: 0.08 };
+    const footR = { x: X + 0.26, y: Y + 0.06, z: 0.08 };
+    for (const [h, k, f] of [
+      [hipL, kneeL, footL],
+      [hipR, kneeR, footR],
+    ] as const) {
+      this.limb(g, h, k, 0.2, pants);
+      this.limb(g, k, f, 0.16, pants);
+      this.limb(g, add(h, { x: 0.05, y: 0, z: 0 }), add(k, { x: 0.05, y: 0, z: 0 }), 0.05, shade, 0.7); // 바지 주름
+    }
+    // 신발
+    for (const f of [footL, footR]) {
+      const p = project(f);
+      g.fillStyle(0xf4f4f6, 1).fillEllipse(p.x + 6, p.y + 6, 0.3 * p.scale, 0.09 * p.scale);
+      g.fillStyle(0x222222, 1).fillRect(p.x - 0.14 * p.scale + 6, p.y + 6 + 0.035 * p.scale, 0.28 * p.scale, 0.016 * p.scale);
+    }
+
+    // 상체(남색 유니폼): 등이 보이도록 어깨폭이 넓게 보인다
+    const jersey = 0x1b2a57;
+    const torso = [
+      project({ x: X - 0.17, y: Y, z: 0.96 }),
+      project({ x: X + 0.19, y: Y, z: 0.96 }),
+      project({ x: X + 0.24, y: Y, z: 1.5 }),
+      project({ x: X - 0.22, y: Y, z: 1.5 }),
+    ];
+    g.fillStyle(jersey, 1).fillPoints(torso, true);
+    // 등 쪽 대각선 줄무늬
+    for (let i = 0; i < 4; i++) {
+      const a = project({ x: X - 0.2 + i * 0.1, y: Y, z: 1.48 });
+      const b = project({ x: X - 0.1 + i * 0.1, y: Y, z: 1.0 });
+      g.lineStyle(0.03 * a.scale, 0x5d70b0, 0.55).lineBetween(a.x, a.y, b.x, b.y);
+    }
+    const belt = [
+      project({ x: X - 0.17, y: Y, z: 0.99 }),
+      project({ x: X + 0.19, y: Y, z: 0.99 }),
+      project({ x: X + 0.19, y: Y, z: 0.93 }),
+      project({ x: X - 0.17, y: Y, z: 0.93 }),
+    ];
+    g.fillStyle(0x0d1530, 1).fillPoints(belt, true);
+
+    // 목과 머리: 뒤통수와 헬멧
+    const neck = project({ x: X + 0.02, y: Y, z: 1.55 });
+    g.fillStyle(0xc88f68, 1).fillRect(neck.x - 0.045 * neck.scale, neck.y - 0.05 * neck.scale, 0.09 * neck.scale, 0.1 * neck.scale);
+    const head = project({ x: X + 0.02, y: Y, z: 1.7 });
+    g.fillStyle(0xd9a07a, 1).fillCircle(head.x, head.y, 0.12 * head.scale);
+    g.fillStyle(0x131b3a, 1).fillEllipse(head.x, head.y - 0.025 * head.scale, 0.27 * head.scale, 0.25 * head.scale);
+    g.fillStyle(0x131b3a, 1).fillRect(head.x - 0.02 * head.scale, head.y - 0.02 * head.scale, 0.15 * head.scale, 0.09 * head.scale); // 귀 보호대
+    g.fillStyle(0x3a4a86, 0.8).fillEllipse(head.x - 0.06 * head.scale, head.y - 0.08 * head.scale, 0.08 * head.scale, 0.04 * head.scale); // 헬멧 광택
+  }
+
+  /** 배트와 팔을 현재 자세로 그린다. 배트 끝의 화면 좌표를 돌려준다 */
   private pose(p: Pose) {
     const g = this.dynamic;
     g.clear();
-    const hands = project(p.hands);
-    const tip = project(batTip(p));
-    const sh = project(SHOULDER);
-    // 팔
-    g.lineStyle(0.1 * sh.scale, 0xd9d9e0, 1).lineBetween(sh.x, sh.y, hands.x, hands.y);
-    // 배트: 손잡이(가늘게) + 머리(굵게)
-    const hx = lerp(hands.x, tip.x, 0.28);
-    const hy = lerp(hands.y, tip.y, 0.28);
-    g.lineStyle(0.034 * hands.scale, 0xb98a52, 1).lineBetween(hands.x, hands.y, hx, hy);
-    g.lineStyle(0.07 * tip.scale, 0xd8b176, 1).lineBetween(hx, hy, tip.x, tip.y);
-    g.fillStyle(0x222222, 1).fillCircle(hands.x, hands.y, 0.06 * hands.scale); // 장갑
-    return tip;
+    const dir = batDir(p);
+    const at = (d: number): Point3 => ({ x: p.hands.x + dir.x * d, y: p.hands.y + dir.y * d, z: p.hands.z + dir.z * d });
+    const knob = at(-0.07);
+    const grip = at(0.22);
+    const tip = at(BAT_LEN);
+
+    // 팔: 어깨 → 팔꿈치(소매) → 손(맨살 + 보호대)
+    const shoulders: Point3[] = [
+      { x: BODY.x + 0.2, y: BODY.y, z: 1.46 },
+      { x: BODY.x - 0.18, y: BODY.y, z: 1.46 },
+    ];
+    const handsAt = [p.hands, at(0.12)];
+    shoulders.forEach((sh, i) => {
+      const hand = handsAt[i]!;
+      const mid = lerp3(sh, hand, 0.5);
+      const elbow = add(mid, { x: i === 0 ? 0.1 : -0.1, y: -0.05, z: -0.17 });
+      this.limb(g, sh, elbow, 0.12, 0x1b2a57); // 소매
+      this.limb(g, elbow, hand, 0.085, 0xd9a07a); // 팔뚝
+      this.limb(g, lerp3(elbow, hand, 0.35), lerp3(elbow, hand, 0.55), 0.095, 0x151515); // 팔 보호대
+    });
+
+    // 배트: 노브 → 테이프 감은 손잡이 → 검은 배럴(끝으로 갈수록 굵게)
+    this.taper(g, knob, grip, 0.034, 0.034, 0xe2d6bd);
+    this.taper(g, grip, tip, 0.036, 0.075, 0x141414);
+    const kp = project(knob);
+    g.fillStyle(0xe2d6bd, 1).fillCircle(kp.x, kp.y, 0.025 * kp.scale);
+    // 장갑
+    for (const h of handsAt) {
+      const hp = project(h);
+      g.fillStyle(0xf6f6f8, 1).fillCircle(hp.x, hp.y, 0.062 * hp.scale);
+      g.lineStyle(1, 0xaaaaaa, 0.8).strokeCircle(hp.x, hp.y, 0.062 * hp.scale);
+    }
+    return project(tip);
+  }
+
+  /** 두께가 변하는 선(배트): 화면에서 수직 방향으로 폭을 준 사각형 */
+  private taper(g: Phaser.GameObjects.Graphics, a: Point3, b: Point3, wa: number, wb: number, color: number) {
+    const pa = project(a);
+    const pb = project(b);
+    const dx = pb.x - pa.x;
+    const dy = pb.y - pa.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const nx = -dy / len;
+    const ny = dx / len;
+    const ra = (wa * pa.scale) / 2;
+    const rb = (wb * pb.scale) / 2;
+    g.fillStyle(color, 1).fillPoints(
+      [
+        { x: pa.x + nx * ra, y: pa.y + ny * ra },
+        { x: pb.x + nx * rb, y: pb.y + ny * rb },
+        { x: pb.x - nx * rb, y: pb.y - ny * rb },
+        { x: pa.x - nx * ra, y: pa.y - ny * ra },
+      ],
+      true,
+    );
+    g.fillStyle(color, 1).fillCircle(pb.x, pb.y, rb);
   }
 
   reset() {
