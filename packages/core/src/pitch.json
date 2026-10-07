@@ -1,0 +1,37 @@
+{
+  "types": {
+    "fastball": { "speed": 148, "spread": 0.30, "windowMs": 55, "deception": 0.10 },
+    "slider":   { "speed": 134, "spread": 0.38, "windowMs": 62, "deception": 0.30 },
+    "curve":    { "speed": 118, "spread": 0.42, "windowMs": 70, "deception": 0.35 },
+    "changeup": { "speed": 126, "spread": 0.38, "windowMs": 72, "deception": 0.30 }
+  },
+  "control": { "gaugeBestFactor": 0.4, "gaugeWorstFactor": 2.0, "ratingFactor": 0.4 },
+  "contact": {
+    "ratingWindow": 0.3,
+    "typeGuessRight": 1.3,
+    "typeGuessWrong": 0.75,
+    "cellGuessRadius": 0.6,
+    "cellGuessRight": 1.15,
+    "cellGuessWrong": 0.9,
+    "outOfZoneFalloff": 0.5,
+    "deceptionPenalty": 0.5,
+    "eyeDeceptionRelief": 0.6
+  },
+  "foul": { "base": 0.28, "timing": 0.4, "outOfZone": 0.15, "max": 0.8 },
+  "quality": {
+    "timingWeight": 0.5,
+    "centerWeight": 0.25,
+    "powerWeight": 0.15,
+    "typeGuessBonus": 0.1,
+    "cellGuessBonus": 0.08,
+    "noise": 0.15,
+    "hard": 0.78,
+    "normal": 0.55
+  },
+  "kindByHeight": {
+    "low":  { "ground": 0.60, "line": 0.25, "fly": 0.15, "popup": 0.00 },
+    "mid":  { "ground": 0.30, "line": 0.35, "fly": 0.30, "popup": 0.05 },
+    "high": { "ground": 0.10, "line": 0.20, "fly": 0.45, "popup": 0.25 }
+  },
+  "kindAdjust": { "hardPopupFactor": 0.2, "weakLineFactor": 0.5 }
+}

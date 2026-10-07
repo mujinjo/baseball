@@ -24,3 +24,10 @@ export function weightedPick<K extends string>(weights: Partial<Record<K, number
   }
   return entries[entries.length - 1]![0];
 }
+
+/** 표준정규분포 난수 (Box-Muller) */
+export function gaussian(rng: Rng): number {
+  const u = Math.max(rng(), 1e-12);
+  const v = rng();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
