@@ -84,6 +84,8 @@ export class GameScene extends Phaser.Scene {
   stage!: Stage;
   private swingTween: Phaser.Tweens.Tween | null = null;
   private releaseAt = 0;
+  /** 개발/테스트: 투수 동작 진행도를 고정해서 볼 때 쓴다 */
+  debugTau: number | null = null;
   private fieldView!: FieldView;
 
   // 투수 패널
@@ -338,7 +340,7 @@ export class GameScene extends Phaser.Scene {
 
   update() {
     // 투수 동작: 릴리스 시각에 맞춰 와인드업 → 투구 → 팔로스루
-    const tau = this.releaseAt > 0 ? Math.min(1.4, (now() - (this.releaseAt - WINDUP_MS)) / WINDUP_MS) : 0;
+    const tau = this.debugTau ?? (this.releaseAt > 0 ? Math.min(1.4, (now() - (this.releaseAt - WINDUP_MS)) / WINDUP_MS) : 0);
     this.stage.pitcher.setProgress(Math.max(0, tau));
     this.stage.render();
     if (this.phase === 'gauge') {

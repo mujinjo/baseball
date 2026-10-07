@@ -9,7 +9,7 @@ import {
   type Point3,
 } from '../game/geometry';
 import { AWAY_COLORS, BatterRig, FielderRig, HOME_COLORS, PitcherRig, toV3 } from './rigs';
-import { buildWorld, warpX } from './world';
+import { buildWorld } from './world';
 
 const VIEW_W = 540;
 const VIEW_H = 960;
@@ -59,14 +59,14 @@ export class Stage {
     this.scene.add(this.batter.object);
     // 투수: 마운드 위
     this.scene.add(this.pitcher.object);
-    // 내야수 (먼 쪽 좌우는 모아 둔다)
+    // 내야수: 실제 수비 위치. 1루수·3루수는 이 카메라의 시야 밖이라 화면에 보이지 않는다
     for (const [x, y] of [
-      [14, 12],
-      [6, 31],
-      [-8, 30],
-      [-15, 11],
+      [17, 12], // 1루수
+      [5.5, 30], // 2루수(약간 중앙 쪽)
+      [-6.5, 30], // 유격수
+      [-17, 12], // 3루수
     ] as const) {
-      const f = new FielderRig(warpX(x, y), y, HOME_COLORS, 1);
+      const f = new FielderRig(x, y, HOME_COLORS, 1);
       this.fielders.push(f);
       this.scene.add(f.object);
     }

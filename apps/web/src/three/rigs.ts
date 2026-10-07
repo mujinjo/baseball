@@ -33,6 +33,9 @@ interface BodyOpts {
   handL: THREE.Vector3;
   handR: THREE.Vector3;
   headYaw: number;
+  /** 팔꿈치가 굽는 방향(생략하면 아래쪽·바깥쪽) */
+  poleL?: THREE.Vector3;
+  poleR?: THREE.Vector3;
 }
 
 /** 몸통·다리·팔 관절을 계산한다. 팔다리는 IK, 어깨/골반은 방위각으로 회전 */
@@ -61,8 +64,8 @@ function bodyJoints(o: BodyOpts, j: Joints): Joints {
   twoBone(j.hipR, ankleR, 0.46 * s, 0.45 * s, fP.clone().addScaledVector(rP, 0.25), j.kneeR);
   j.handL.copy(o.handL);
   j.handR.copy(o.handR);
-  twoBone(j.shoulderL, o.handL, 0.3 * s, 0.28 * s, new THREE.Vector3(0, -1, 0).addScaledVector(rC, -0.35), j.elbowL);
-  twoBone(j.shoulderR, o.handR, 0.3 * s, 0.28 * s, new THREE.Vector3(0, -1, 0).addScaledVector(rC, 0.35), j.elbowR);
+  twoBone(j.shoulderL, o.handL, 0.3 * s, 0.28 * s, o.poleL ?? new THREE.Vector3(0, -1, 0).addScaledVector(rC, -0.35), j.elbowL);
+  twoBone(j.shoulderR, o.handR, 0.3 * s, 0.28 * s, o.poleR ?? new THREE.Vector3(0, -1, 0).addScaledVector(rC, 0.35), j.elbowR);
   return j;
 }
 
@@ -165,7 +168,8 @@ export class BatterRig {
     // 배트 오브젝트: 노브가 손 뒤쪽 7cm
     this.bat.position.copy(hands).addScaledVector(dir, 0.0);
     this.bat.quaternion.setFromUnitVectors(UP, dir);
-    const topHand = hands.clone().addScaledVector(dir, 0.13);
+    // 우타자: 왼손(앞손)이 노브 쪽 아래, 오른손(뒷손)이 그 위를 잡는다
+    const upperHand = hands.clone().addScaledVector(dir, 0.13);
 
     const base = toV3({ x: BODY.x, y: BODY.y, z: 0 });
     const footL = toV3({ x: BODY.x + 0.02, y: BODY.y + 0.34, z: 0 });
@@ -180,8 +184,8 @@ export class BatterRig {
         crouch: p.crouch,
         footL,
         footR,
-        handL: topHand, // 앞손(투수 쪽)이 배트 위쪽을 잡는다
-        handR: hands,
+        handL: hands,
+        handR: upperHand,
         headYaw: rad(90),
       },
       this.joints,
@@ -245,14 +249,29 @@ function keyed(t: number, keys: [number, THREE.Vector3][]): THREE.Vector3 {
   return keys[keys.length - 1]![1].clone();
 }
 
-/** 우완 투수. 진행도 τ: 0=와인드업 시작, 1=릴리스, 1.4=팔로스루 끝 */
+const keyedNum = (t: number, keys: [number, number][]) => {
+  if (t <= keys[0]![0]) return keys[0]![1];
+  for (let i = 1; i < keys.length; i++) {
+    const [t1, v1] = keys[i]!;
+    const [t0, v0] = keys[i - 1]!;
+    if (t <= t1) return lerp(v0, v1, smooth(t0, t1, t));
+  }
+  return keys[keys.length - 1]![1];
+};
+
+/**
+ * 우완 투수의 오버핸드 투구. 진행도 τ: 0=세트, 0.3=다리 들기, 0.62=스트라이드 착지, 1=릴리스, 1.4=팔로스루 끝.
+ * 투수는 홈플레이트(카메라)를 향해 서므로 그의 오른쪽(던지는 팔)은 화면 왼쪽(-x)이다.
+ * 던지는 팔은 몸 뒤로 내려갔다가 어깨 높이로 접어 올린(코킹) 뒤 머리 위를 넘어 앞으로 뿌린다.
+ */
 export class PitcherRig {
   readonly humanoid: Humanoid;
   readonly object = new THREE.Group();
   private joints = emptyJoints();
+  private readonly scale = 1.05;
 
   constructor() {
-    this.humanoid = new Humanoid({ jersey: HOME_COLORS.jersey, pants: 0xeceef2, cap: HOME_COLORS.cap, skin: SKIN, shoes: 0xe8e8e8 }, 1);
+    this.humanoid = new Humanoid({ jersey: HOME_COLORS.jersey, pants: 0xf7f7fa, cap: HOME_COLORS.cap, skin: SKIN, shoes: 0x1a1a1f }, this.scale);
     this.object.add(this.humanoid.root);
     this.setProgress(0);
   }
@@ -262,50 +281,74 @@ export class PitcherRig {
   }
 
   setProgress(tau: number) {
-    const base = toV3({ x: 0, y: MOUND.y, z: MOUND.height });
+    // 마운드 중심 기준 상대 좌표 (x=오른쪽, y=홈 쪽이 음수, z=마운드 윗면 기준 높이)
     const W = (x: number, y: number, z: number) => toV3({ x, y: MOUND.y + y, z: MOUND.height + z });
-    // y: 마운드 중심 기준으로 홈플레이트 쪽이 음수
-    const stride = smooth(0.4, 0.8, tau);
-    const lift = smooth(0.1, 0.4, tau) * (1 - smooth(0.4, 0.62, tau));
-    const pivot = W(0.12, 0.05, 0);
-    const footR = pivot;
-    const footL = W(-0.12, lerp(0.0, -1.55, stride), 0.5 * lift).add(new THREE.Vector3(0, 0, 0));
-    // 투구 팔과 글러브 팔 경로
+    // 체중 이동: 골반이 홈 쪽으로 약 0.9m 나간다
+    const shift = lerp(0, -0.9, smooth(0.3, 0.72, tau)) + lerp(0, -0.35, smooth(1.0, 1.4, tau));
+    const base = toV3({ x: 0, y: MOUND.y + shift, z: MOUND.height });
+
+    const footR = keyed(tau, [
+      [0, W(-0.14, 0.04, 0)],
+      [0.55, W(-0.14, 0.04, 0)],
+      [0.8, W(-0.2, -0.35, 0.03)],
+      [1.0, W(-0.22, -0.65, 0.12)],
+      [1.4, W(-0.22, -1.05, 0.28)],
+    ]);
+    const footL = keyed(tau, [
+      [0, W(0.14, 0.0, 0)],
+      [0.3, W(0.1, -0.12, 0.55)],
+      [0.62, W(0.1, -1.3, 0)],
+      [1.4, W(0.1, -1.3, 0)],
+    ]);
+    // 던지는 손(오른손)과 글러브 손(왼손)
     const handR = keyed(tau, [
-      [0, W(0.0, -0.22, 1.2)],
-      [0.35, W(0.2, -0.1, 1.1)],
-      [0.55, W(0.45, 0.55, 1.05)],
-      [0.75, W(0.4, 0.45, 2.0)],
+      [0, W(-0.06, -0.2, 1.28)],
+      [0.3, W(-0.06, -0.22, 1.3)],
+      [0.5, W(-0.45, 0.28, 0.95)], // 몸 뒤로 내려 팔을 펴고
+      [0.66, W(-0.6, 0.22, 1.6)], // 어깨 높이로 접어 올려 코킹
+      [0.84, W(-0.45, -0.3, 2.05)], // 머리 위를 지나
       [1.0, W(RELEASE_WORLD.x, RELEASE_WORLD.y - MOUND.y, RELEASE_WORLD.z - MOUND.height)],
-      [1.4, W(-0.25, -2.0, 0.85)],
+      [1.2, W(-0.05, -1.55, 1.2)],
+      [1.4, W(0.25, -1.55, 0.7)], // 반대쪽 무릎 쪽으로 내려오며 마무리
     ]);
     const handL = keyed(tau, [
-      [0, W(0.05, -0.28, 1.18)],
-      [0.4, W(-0.05, -0.3, 1.5)],
-      [0.8, W(-0.2, -1.0, 1.55)],
-      [1.0, W(-0.3, -1.2, 1.35)],
-      [1.4, W(-0.25, -1.3, 1.05)],
+      [0, W(0.06, -0.2, 1.28)],
+      [0.3, W(0.06, -0.22, 1.3)],
+      [0.55, W(0.3, -0.75, 1.45)], // 글러브를 홈 쪽으로 뻗어 균형을 잡고
+      [0.9, W(0.3, -0.95, 1.5)],
+      [1.1, W(0.15, -0.55, 1.15)], // 몸 쪽으로 당긴다
+      [1.4, W(0.15, -0.5, 1.05)],
     ]);
-    const pelvisYaw = lerp(rad(-175), rad(-82), smooth(0.3, 0.92, tau));
-    const chestYaw = lerp(rad(-185), rad(-68), smooth(0.4, 1.0, tau));
+
+    const pelvisYaw = rad(keyedNum(tau, [[0, -100], [0.3, -150], [0.5, -150], [1.0, -78], [1.4, -62]]));
+    const chestYaw = rad(keyedNum(tau, [[0, -110], [0.3, -155], [0.55, -150], [0.8, -105], [1.0, -75], [1.4, -50]]));
+    const lean = keyedNum(tau, [[0, 0.04], [0.3, 0.0], [0.7, 0.12], [1.0, 0.5], [1.4, 0.7]]);
+    const crouch = keyedNum(tau, [[0, 0], [0.3, 0.0], [0.62, 0.12], [1.0, 0.22], [1.4, 0.3]]);
+
+    // 팔꿈치 방향: 코킹 구간엔 옆(오른쪽)으로, 앞으로 뿌릴 땐 아래로
+    const outward = right(chestYaw);
+    const poleR = new THREE.Vector3(0, -0.4, 0).addScaledVector(outward, lerp(1.0, 0.1, smooth(0.75, 1.0, tau)));
+    const poleL = new THREE.Vector3(0, -1, 0).addScaledVector(outward, -0.3);
+
     bodyJoints(
       {
         base,
-        scale: 1,
+        scale: this.scale,
         pelvisYaw,
         chestYaw,
-        lean: lerp(0.05, 0.55, smooth(0.65, 1.1, tau)),
-        crouch: lerp(0, 0.2, smooth(0.6, 1.0, tau)) + 0.04 * lift,
+        lean,
+        crouch,
         footL,
         footR,
         handL,
         handR,
         headYaw: rad(-90),
+        poleL,
+        poleR,
       },
       this.joints,
     );
     this.humanoid.update(this.joints);
-    // 모자·머리는 항상 타자(카메라 쪽)를 본다
   }
 }
 

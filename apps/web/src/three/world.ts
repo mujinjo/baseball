@@ -1,18 +1,6 @@
 import * as THREE from 'three';
 import { PLATE_WIDTH_M } from '../game/geometry';
 
-const smooth = (a: number, b: number, v: number) => {
-  const t = Math.min(1, Math.max(0, (v - a) / (b - a)));
-  return t * t * (3 - 2 * t);
-};
-
-/**
- * 먼 곳의 좌우 폭을 줄여 1루·3루가 화면 안에 들어오게 하는 보정(참고 게임의 광각 느낌).
- * 홈플레이트 근처(타석·박스)는 거의 그대로 두고, 마운드보다 멀어질수록 가로로 모은다.
- */
-export const warpFactor = (y: number) => 1 - 0.8 * smooth(0.5, 8, y);
-export const warpX = (x: number, y: number) => x * warpFactor(y);
-
 /** 월드(x, y=투수 쪽) 평면 위의 점 → three.js 좌표 */
 const flat = (x: number, y: number, h: number) => new THREE.Vector3(x, h, -y);
 
@@ -91,9 +79,6 @@ function ribbon(points: [number, number][], width: number, material: THREE.Mater
 const circlePts = (cx: number, cy: number, r: number, n = 72): [number, number][] =>
   Array.from({ length: n }, (_, i) => [cx + Math.cos((i / n) * Math.PI * 2) * r, cy + Math.sin((i / n) * Math.PI * 2) * r]);
 
-/** 월드 점을 warpX로 모은다 */
-const warpPts = (pts: [number, number][]): [number, number][] => pts.map(([x, y]) => [warpX(x, y), y]);
-
 export interface WorldRefs {
   scoreboard: THREE.Mesh;
 }
@@ -158,8 +143,8 @@ export function buildWorld(scene: THREE.Scene): WorldRefs {
   const dirt = (order: number) => groundMaterial(dirtTex, order);
 
   // 내야 흙(스킨): 마운드를 중심으로 한 큰 원 + 홈 주변 원 (먼 쪽은 좌우를 모은다)
-  scene.add(polygonMesh(warpPts(circlePts(0, 19, 27)), dirt(1), 1, 0.002));
-  scene.add(polygonMesh(warpPts(circlePts(0, 0.5, 5.2)), dirt(3), 3, 0.005));
+  scene.add(polygonMesh(circlePts(0, 19, 27), dirt(1), 1, 0.002));
+  scene.add(polygonMesh(circlePts(0, 0.5, 5.2), dirt(3), 3, 0.005));
   // 안쪽 잔디 다이아몬드
   const diamond: [number, number][] = [
     [0, 8.2],
@@ -174,7 +159,7 @@ export function buildWorld(scene: THREE.Scene): WorldRefs {
     for (let k = 0; k < 12; k++) dense.push([a[0] + ((b[0] - a[0]) * k) / 12, a[1] + ((b[1] - a[1]) * k) / 12]);
   }
   const lawn = new THREE.MeshLambertMaterial({ map: grassTex, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
-  scene.add(polygonMesh(warpPts(dense), lawn, 2, 0.003));
+  scene.add(polygonMesh(dense, lawn, 2, 0.003));
 
   // 마운드(투수판까지 18.44m)
   const mound = new THREE.Mesh(new THREE.CylinderGeometry(1.7, 2.7, 0.25, 40), dirt(4));
@@ -188,7 +173,7 @@ export function buildWorld(scene: THREE.Scene): WorldRefs {
   const chalk = new THREE.MeshLambertMaterial({ color: 0xf3f0e8, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -6, polygonOffsetUnits: -6 });
   for (const side of [-1, 1]) {
     const line: [number, number][] = [];
-    for (let t = 0.2; t <= 110; t += t < 10 ? 0.5 : 4) line.push([warpX(side * t, t), t]);
+    for (let t = 0.2; t <= 110; t += t < 10 ? 0.5 : 4) line.push([side * t, t]);
     scene.add(ribbon(line, 0.12, chalk, 6, 0.01));
   }
   const half = PLATE_WIDTH_M / 2;
@@ -219,7 +204,7 @@ export function buildWorld(scene: THREE.Scene): WorldRefs {
   );
   scene.add(plate);
 
-  // 베이스: 1루·3루는 좌우를 모은 위치, 2루는 투수 뒤
+  // 베이스: 실제 위치(1루·3루는 이 카메라 시야 밖, 2루는 투수 뒤에 보임)
   const baseMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
   for (const [bx, by] of [
     [19.4, 19.4],
@@ -227,7 +212,7 @@ export function buildWorld(scene: THREE.Scene): WorldRefs {
     [0, 38.8],
   ] as const) {
     const b = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.09, 0.46), baseMat);
-    b.position.copy(flat(warpX(bx, by), by, 0.05));
+    b.position.copy(flat(bx, by, 0.05));
     b.rotation.y = Math.PI / 4;
     scene.add(b);
   }

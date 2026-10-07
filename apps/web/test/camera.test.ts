@@ -4,7 +4,6 @@ import { createGameCamera } from '../src/three/stage';
 import { toV3 } from '../src/three/rigs';
 import { twoBone } from '../src/three/humanoid';
 import { project, toScreen, zoneToWorld } from '../src/game/geometry';
-import { warpFactor } from '../src/three/world';
 
 /** three.js 카메라로 투영한 화면 픽셀 */
 function viaCamera(p: { x: number; y: number; z: number }) {
@@ -46,10 +45,23 @@ describe('좌표 변환과 보정', () => {
     const v = toV3({ x: 1, y: 2, z: 3 });
     expect([v.x, v.y, v.z]).toEqual([1, 3, -2]);
   });
-  it('먼 곳은 좌우를 모으고 홈플레이트 근처는 그대로', () => {
-    expect(warpFactor(0.9)).toBeGreaterThan(0.98);
-    expect(warpFactor(19.4)).toBeLessThan(0.25);
-    expect(warpFactor(100)).toBeCloseTo(0.2);
+  it('1루·3루 베이스는 이 카메라 시야 밖, 2루는 시야 안', () => {
+    const inView = (p: { x: number; y: number; z: number }) => {
+      const v = viaCamera(p);
+      return v.x >= 0 && v.x <= 540 && v.y >= 0 && v.y <= 960;
+    };
+    expect(inView({ x: 19.4, y: 19.4, z: 0 })).toBe(false);
+    expect(inView({ x: -19.4, y: 19.4, z: 0 })).toBe(false);
+    expect(inView({ x: 0, y: 38.8, z: 0 })).toBe(true);
+  });
+  it('파울 라인은 홈에서 바깥(좌우)으로 벌어진다', () => {
+    const near = viaCamera({ x: 2, y: 2, z: 0 });
+    const far = viaCamera({ x: 8, y: 8, z: 0 });
+    // 오른쪽 파울 라인: 멀어질수록 화면 오른쪽으로(소실점 기준 바깥쪽으로) 나간다
+    expect(far.x).toBeGreaterThan(near.x);
+    const leftNear = viaCamera({ x: -2, y: 2, z: 0 });
+    const leftFar = viaCamera({ x: -8, y: 8, z: 0 });
+    expect(leftFar.x).toBeLessThan(leftNear.x);
   });
 });
 

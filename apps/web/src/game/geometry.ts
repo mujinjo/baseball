@@ -66,8 +66,8 @@ export const BREAK_OFFSET: Record<PitchType, Location> = {
   changeup: { x: 0, y: -0.15 },
 };
 
-/** 투수가 공을 놓는 월드 좌표(마운드 앞쪽, 머리 위 높이). 투수 릴리스 애니메이션과 같아야 한다 */
-export const RELEASE_WORLD: Point3 = { x: 0.3, y: 17.0, z: 1.9 };
+/** 우완 투수가 공을 놓는 월드 좌표(그의 오른손 쪽 = 화면 왼쪽, 마운드 앞쪽, 머리 위 높이). 투수 릴리스 애니메이션과 같아야 한다 */
+export const RELEASE_WORLD: Point3 = { x: -0.3, y: 17.1, z: 1.95 };
 
 /** 존 좌표 오프셋을 월드 거리로 바꾼 값(변화구 눈속임 계산용) */
 const offsetToWorld = (o: Location): Point3 => ({
