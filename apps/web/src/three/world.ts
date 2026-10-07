@@ -178,8 +178,9 @@ export function buildWorld(scene: THREE.Scene): WorldRefs {
   }
   const half = PLATE_WIDTH_M / 2;
   const boxIn = half + 0.152;
-  const boxOut = boxIn + 1.219;
-  const boxY = 0.914;
+  // 타석 박스: 실제(1.22×1.83m)보다 작게 줄여 화면을 덜 가리게 한다
+  const boxOut = boxIn + 0.9;
+  const boxY = 0.7;
   for (const side of [-1, 1]) {
     const rect: [number, number][] = [
       [side * boxIn, boxY],
@@ -188,7 +189,7 @@ export function buildWorld(scene: THREE.Scene): WorldRefs {
       [side * boxIn, -boxY],
       [side * boxIn, boxY],
     ];
-    scene.add(ribbon(rect, 0.07, chalk, 6, 0.012));
+    scene.add(ribbon(rect, 0.05, chalk, 6, 0.012));
   }
   const plate = polygonMesh(
     [

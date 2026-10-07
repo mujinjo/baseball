@@ -109,7 +109,7 @@ interface BatPose {
 const BODY = { x: -0.78, y: -0.22 };
 const BAT_LEN = 0.84;
 const STANCE: BatPose = {
-  hands: { x: -0.5, y: -0.4, z: 1.36 },
+  hands: { x: -0.3, y: -0.42, z: 1.3 },
   azimuth: -95,
   loft: 70,
   pelvisYaw: -8,
@@ -119,12 +119,22 @@ const STANCE: BatPose = {
 };
 const CONTACT_HANDS: Point3 = { x: -0.4, y: -0.08, z: 1.05 };
 const FOLLOW: BatPose = {
-  hands: { x: -0.32, y: 0.3, z: 1.3 },
-  azimuth: 125,
-  loft: 38,
-  pelvisYaw: 82,
-  chestYaw: 108,
-  lean: 0.06,
+  hands: { x: -0.3, y: 0.32, z: 1.22 },
+  azimuth: 88,
+  loft: 32,
+  pelvisYaw: 72,
+  chestYaw: 98,
+  lean: 0.08,
+  crouch: 0.07,
+};
+/** 마무리 끝: 배트가 몸 앞을 지나 왼쪽(화면 왼쪽)으로 확 감겨 돌아간다 */
+const WRAP: BatPose = {
+  hands: { x: -0.62, y: 0.12, z: 1.42 },
+  azimuth: 192,
+  loft: 26,
+  pelvisYaw: 100,
+  chestYaw: 128,
+  lean: 0.05,
   crouch: 0.05,
 };
 
@@ -186,6 +196,11 @@ export class BatterRig {
     const upperHand = hands.clone().addScaledVector(dir, 0.13);
 
     const base = toV3({ x: BODY.x, y: BODY.y, z: 0 });
+    const cf = fwd(rad(p.chestYaw));
+    const cr = right(rad(p.chestYaw));
+    // 앞팔(왼팔)은 팔꿈치가 아래·앞쪽을, 뒷팔(오른팔)은 팔꿈치가 바깥·살짝 위를 향한다
+    const poleL = new THREE.Vector3(0, -1, 0).addScaledVector(cf, 0.7).addScaledVector(cr, -0.2);
+    const poleR = new THREE.Vector3(0, -0.45, 0).addScaledVector(cr, 0.9).addScaledVector(cf, -0.35);
     const footL = toV3({ x: BODY.x + 0.02, y: BODY.y + 0.34, z: 0 });
     const footR = toV3({ x: BODY.x + 0.12, y: BODY.y - 0.3, z: 0 });
     bodyJoints(
@@ -201,6 +216,8 @@ export class BatterRig {
         handL: hands,
         handR: upperHand,
         headYaw: rad(90),
+        poleL,
+        poleR,
       },
       this.joints,
     );
@@ -242,7 +259,9 @@ export class BatterRig {
         crouch: lerp(STANCE.crouch, c.crouch, u),
       });
     } else {
-      this.setPose(lerpPose(c, FOLLOW, smooth(0, 1, clamp01(u - 1))));
+      const t = clamp01(u - 1);
+      // 타격 → 투수 쪽으로 쭉 뻗고(0~0.45) → 몸 앞으로 감아 왼쪽으로 돌아간다(0.45~1)
+      this.setPose(t <= 0.45 ? lerpPose(c, FOLLOW, smooth(0, 0.45, t)) : lerpPose(FOLLOW, WRAP, smooth(0.4, 1, t)));
     }
   }
 

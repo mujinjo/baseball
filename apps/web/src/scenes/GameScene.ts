@@ -19,6 +19,7 @@ import {
   type GameState,
   type Location,
   type PastPitch,
+  type PitchEvent,
   type PitchThrow,
   type PitchType,
   type Rng,
@@ -37,6 +38,7 @@ import {
   ZONE_SCALE_X,
   ZONE_SCALE_Y,
   ballWorldAt,
+  toScreen,
   flightMs,
   gaugeAccuracy,
   gaugePosition,
@@ -84,6 +86,9 @@ export class GameScene extends Phaser.Scene {
   stage!: Stage;
   private swingTween: Phaser.Tweens.Tween | null = null;
   private releaseAt = 0;
+  /** 이번 타석에서 던진 공이 지나간 위치 표시 */
+  private pitchMarks: Phaser.GameObjects.Container[] = [];
+  private clearMarksNext = false;
   /** 개발/테스트: 투수 동작 진행도를 고정해서 볼 때 쓴다 */
   debugTau: number | null = null;
   private fieldView!: FieldView;
@@ -126,6 +131,8 @@ export class GameScene extends Phaser.Scene {
     this.previewLoc = null;
     this.flight = null;
     this.history = [];
+    this.pitchMarks = [];
+    this.clearMarksNext = false;
     this.typeButtons = [];
     this.pitcherObjs = [];
 
@@ -234,6 +241,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   private startPitch() {
+    if (this.clearMarksNext) {
+      this.pitchMarks.forEach((m) => m.destroy());
+      this.pitchMarks = [];
+      this.clearMarksNext = false;
+    }
     this.resetVisuals();
     this.pendingThrow = null;
     this.previewLoc = null;
@@ -371,6 +383,27 @@ export class GameScene extends Phaser.Scene {
     if (done) this.resolve();
   }
 
+  /** 공이 존을 지나간 위치를 점으로 찍는다: 스트라이크=빨강, 볼=초록, 파울=노랑, 인플레이=파랑 */
+  private addPitchMark(actual: Location, event: PitchEvent) {
+    const color =
+      event.type === 'ball' ? 0x43a047 : event.type === 'strike' ? 0xe53935 : event.type === 'foul' ? 0xfdd835 : 0x1e88e5;
+    const p = toScreen(actual);
+    const c = this.add.container(p.x, p.y).setDepth(4);
+    c.add(this.add.circle(0, 0, 10, color, 0.92).setStrokeStyle(2, 0xffffff, 0.95));
+    c.add(
+      this.add
+        .text(0, 0, String(this.pitchMarks.length + 1), {
+          fontSize: '13px',
+          color: event.type === 'foul' ? '#222222' : '#ffffff',
+          fontStyle: 'bold',
+        })
+        .setOrigin(0.5),
+    );
+    c.setScale(0.2);
+    this.tweens.add({ targets: c, scale: 1, duration: 160, ease: 'Back.easeOut' });
+    this.pitchMarks.push(c);
+  }
+
   private resolve() {
     const f = this.flight;
     const pitch = this.pendingThrow;
@@ -387,6 +420,8 @@ export class GameScene extends Phaser.Scene {
     const detail = resolvePitch(pitch, action, AVERAGE_PITCHER, AVERAGE_BATTER, this.rng, DEFAULT_PITCH_PARAMS, actual);
     const out = applyPitch(this.gs, detail.event, this.rng);
     this.gs = out.state;
+    this.addPitchMark(detail.actual, detail.event);
+    if (out.result !== null) this.clearMarksNext = true;
 
     const spec = DEFAULT_PITCH_PARAMS.types[pitch.pitchType];
     const trace = out.trace;

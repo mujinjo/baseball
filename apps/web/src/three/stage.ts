@@ -72,9 +72,6 @@ export class Stage {
     }
 
     this.ball = new THREE.Mesh(new THREE.SphereGeometry(0.0368, 16, 12), new THREE.MeshBasicMaterial({ color: 0xffffff }));
-    const seam = new THREE.Mesh(new THREE.TorusGeometry(0.0372, 0.0035, 6, 20), new THREE.MeshBasicMaterial({ color: 0xc83030 }));
-    seam.rotation.y = Math.PI / 2;
-    this.ball.add(seam);
     this.ball.visible = false;
     this.scene.add(this.ball);
     this.setBattingTeam('away');
