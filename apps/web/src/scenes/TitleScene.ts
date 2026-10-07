@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { AI_LEVELS, type AiLevel, type Team } from '@baseball/core';
 import { Button } from '../ui/Button';
+import type { Stage } from '../three/stage';
 import { ko } from '../i18n/ko';
 
 export interface GameOptions {
@@ -19,6 +20,8 @@ export class TitleScene extends Phaser.Scene {
   }
 
   create() {
+    (this.registry.get('stage') as Stage | undefined)?.setVisible(false);
+    this.add.rectangle(270, 480, 540, 960, 0x0b1d12);
     this.add.text(270, 170, ko.title, { fontSize: '48px', color: '#ffffff', fontStyle: 'bold' }).setOrigin(0.5);
     this.add
       .text(270, 235, ko.subtitle, { fontSize: '20px', color: '#cfe8cf', align: 'center', wordWrap: { width: 460 } })

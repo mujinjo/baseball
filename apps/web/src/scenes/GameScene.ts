@@ -8,6 +8,7 @@ import {
   aiChoosePitch,
   aiGauge,
   applyPitch,
+  battingTeam,
   createRng,
   fieldingTeam,
   newGame,
@@ -26,21 +27,19 @@ import {
 import { ko } from '../i18n/ko';
 import { Button } from '../ui/Button';
 import { Scoreboard } from '../ui/Scoreboard';
-import { Batter, SWING_CONTACT_MS } from '../ui/Batter';
+import { FOLLOW_THROUGH_MS, SWING_CONTACT_MS } from '../game/swing';
+import type { Stage } from '../three/stage';
+import { WINDUP_MS } from '../three/rigs';
 import { FieldView } from '../ui/FieldView';
 import { ZoneGrid } from '../ui/ZoneGrid';
 import {
-  GROUND_Y,
-  PLATE_WIDTH_M,
-  RELEASE_POINT,
   ZONE_CENTER,
   ZONE_SCALE_X,
   ZONE_SCALE_Y,
-  ballAt,
+  ballWorldAt,
   flightMs,
   gaugeAccuracy,
   gaugePosition,
-  project,
 } from '../game/geometry';
 import { describeOutcome } from '../game/messages';
 import type { GameOptions } from './TitleScene';
@@ -55,8 +54,8 @@ import type { GameOptions } from './TitleScene';
 type Phase = 'pitcherPick' | 'gauge' | 'ready' | 'flight' | 'result' | 'over';
 
 const GAUGE = { x: 60, y: 845, w: 420, h: 26 };
-const AI_PITCH_DELAY_MS = 1000;
-const THROW_DELAY_MS = 250;
+const AI_PITCH_DELAY_MS = WINDUP_MS + 250;
+const THROW_DELAY_MS = WINDUP_MS;
 /** 사람 타자는 공 도착 후에도 이 시간 안에 누르면 스윙으로 인정 */
 const LATE_GRACE_MS = 150;
 const RESULT_HOLD_MS = 2000;
@@ -81,9 +80,10 @@ export class GameScene extends Phaser.Scene {
   private hintText!: Phaser.GameObjects.Text;
   private titleText!: Phaser.GameObjects.Text;
   private subText!: Phaser.GameObjects.Text;
-  private ball!: Phaser.GameObjects.Arc;
-  /** 개발/테스트에서 스윙 자세를 확인하기 위해 외부에서 접근할 수 있게 둔다 */
-  batter!: Batter;
+  /** 3D 장면. 개발/테스트에서 자세를 확인할 수 있게 공개해 둔다 */
+  stage!: Stage;
+  private swingTween: Phaser.Tweens.Tween | null = null;
+  private releaseAt = 0;
   private fieldView!: FieldView;
 
   // 투수 패널
@@ -127,7 +127,9 @@ export class GameScene extends Phaser.Scene {
     this.typeButtons = [];
     this.pitcherObjs = [];
 
-    this.drawField();
+    this.stage = this.registry.get('stage') as Stage;
+    this.stage.setVisible(true);
+    this.drawZoneOutline();
     this.scoreboard = new Scoreboard(this);
     this.roleText = this.add
       .text(270, 112, '', { fontSize: '18px', color: '#ffffff', fontStyle: 'bold', stroke: '#000000', strokeThickness: 4 })
@@ -147,8 +149,6 @@ export class GameScene extends Phaser.Scene {
       .setDepth(30);
 
     this.grid = new ZoneGrid(this, (cell) => this.onCourseSelected(cell.center));
-    this.ball = this.add.circle(0, 0, 5, 0xffffff).setStrokeStyle(2, 0xcc3333).setVisible(false).setDepth(5);
-    this.batter = new Batter(this);
     this.fieldView = new FieldView(this);
 
     this.buildPitcherPanel();
@@ -163,155 +163,13 @@ export class GameScene extends Phaser.Scene {
   }
 
   // ───────── 배경 ─────────
-  /**
-   * 야간 구장을 타자 뒤 낮은 시점에서 본 장면. 홈플레이트·타석 박스·파울 라인은 3D 투영(geometry.project)으로 그리고,
-   * 멀리 있는 마운드·야수·관중석·전광판은 같은 카메라 기준 위치에 배치한다.
-   */
-  private drawField() {
-    const g = this.add.graphics();
-    const W = 540;
-    // 간단한 시드 난수(장식용 점 배치가 항상 같도록)
-    let seed = 7;
-    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-
-    // 밤하늘
-    [0x03050b, 0x060a14, 0x0a1120, 0x0f192d].forEach((c, i) => g.fillStyle(c, 1).fillRect(0, i * 90, W, 92));
-    // 멀리 보이는 도시 스카이라인
-    for (let x = 0; x < W; x += 34) {
-      const h = 30 + Math.floor(rnd() * 70);
-      g.fillStyle(0x0b101b, 1).fillRect(x, 440 - h, 32, h + 40);
-      for (let k = 0; k < 6; k++) {
-        if (rnd() > 0.5) g.fillStyle(0x6a6a45, 0.7).fillRect(x + 4 + (k % 3) * 9, 440 - h + 6 + Math.floor(k / 3) * 14, 4, 6);
-      }
-    }
-    // 조명탑
-    g.fillStyle(0x1b1f28, 1).fillRect(5, 250, 5, 220);
-    g.fillStyle(0xaec8ff, 0.1).fillCircle(16, 234, 70).fillCircle(16, 234, 40);
-    g.fillStyle(0xf2f7ff, 1).fillRect(-2, 214, 36, 40);
-    for (let i = 0; i < 12; i++) g.fillStyle(0xc8d4e8, 1).fillRect(1 + (i % 4) * 8, 218 + Math.floor(i / 4) * 12, 6, 8);
-
-    // 대형 전광판
-    g.fillStyle(0x090d18, 1).fillRect(226, 312, 236, 112);
-    g.fillStyle(0x12347a, 1).fillRect(231, 317, 226, 102);
-    g.fillStyle(0x0b2150, 1).fillRect(231, 317, 226, 14);
-    for (let i = 0; i < 14; i++) g.fillStyle(0xdfe7ff, 0.85).fillRect(236 + i * 15, 320, 10, 7);
-    g.fillStyle(0x0a1a44, 1).fillRect(236, 336, 100, 78).fillRect(342, 336, 110, 78);
-    for (let r = 0; r < 7; r++) {
-      g.fillStyle(r % 3 === 0 ? 0xffd23f : 0xdfe7ff, 0.8).fillRect(240, 340 + r * 10, 30 + ((r * 37) % 50), 5);
-      g.fillStyle(0xdfe7ff, 0.7).fillRect(346, 340 + r * 10, 24 + ((r * 53) % 70), 5);
-    }
-    g.fillStyle(0xc41e2a, 1).fillRect(346, 398, 102, 14);
-
-    // 관중석
-    g.fillStyle(0x171a22, 1).fillRect(0, 428, W, 52);
-    for (let i = 0; i < 260; i++) {
-      const c = [0x7a3b3b, 0x3b5a7a, 0xb0a070, 0x4a4a55, 0xc04040][Math.floor(rnd() * 5)]!;
-      g.fillStyle(c, 0.8).fillRect(Math.floor(rnd() * W), 432 + Math.floor(rnd() * 44), 3, 3);
-    }
-    // 외야 펜스와 광고판
-    g.fillStyle(0x0f1830, 1).fillRect(0, 479, W, 24);
-    const ads = [0x1f4fb0, 0xf2f2f2, 0x1f7a3a, 0xb02a2a, 0xf0b020];
-    for (let i = 0; i < 11; i++) {
-      const c = ads[i % ads.length]!;
-      g.fillStyle(c, 1).fillRect(i * 50 + 2, 483, 46, 16);
-      g.fillStyle(c === 0xf2f2f2 || c === 0xf0b020 ? 0x222222 : 0xffffff, 0.8).fillRect(i * 50 + 8, 488, 34, 5);
-    }
-    // 외야~내야 잔디(줄무늬)
-    const bands = [503, 520, 540, 565, 595, 630];
-    bands.forEach((y0, i) => {
-      const y1 = bands[i + 1] ?? 660;
-      g.fillStyle(i % 2 ? 0x1f6a2e : 0x1a5c28, 1).fillRect(0, y0, W, y1 - y0);
-    });
-
-    // 마운드 (투수까지 18.44m)
-    const m = project({ x: 0, y: 18.44, z: 0 });
-    g.fillStyle(0x9a5f38, 1).fillEllipse(m.x, m.y, 5.5 * m.scale, 0.45 * m.scale);
-    g.fillStyle(0xf2f2f2, 1).fillRect(m.x - 0.3 * m.scale, m.y - 0.05 * m.scale, 0.6 * m.scale, 0.05 * m.scale);
-    // 야수와 베이스 (실제 위치는 화면 밖이라 보이도록 옮겨 둠)
-    const fielder = (x: number, y: number, h: number, shirt: number) => {
-      g.fillStyle(0x000000, 0.25).fillEllipse(x, y + 1, h * 0.5, h * 0.12);
-      g.fillStyle(0xeeeeee, 1).fillRect(x - h * 0.12, y - h * 0.42, h * 0.24, h * 0.42); // 바지
-      g.fillStyle(shirt, 1).fillRect(x - h * 0.13, y - h * 0.78, h * 0.26, h * 0.38); // 상의
-      g.fillStyle(0xd9a07a, 1).fillCircle(x, y - h * 0.86, h * 0.1);
-      g.fillStyle(0xc41e2a, 1).fillRect(x - h * 0.11, y - h * 0.97, h * 0.22, h * 0.07);
-    };
-    const base = (x: number, y: number, w: number) => {
-      g.fillStyle(0xffffff, 1).fillPoints(
-        [
-          { x: x - w / 2, y },
-          { x, y: y - w * 0.22 },
-          { x: x + w / 2, y },
-          { x, y: y + w * 0.22 },
-        ],
-        true,
-      );
-    };
-    base(470, 516, 22);
-    base(210, 516, 22);
-    base(392, 498, 14);
-    fielder(470, 512, 30, 0xc41e2a); // 1루수
-    fielder(392, 494, 26, 0xc41e2a); // 2루수
-    fielder(298, 494, 26, 0xc41e2a); // 유격수
-    fielder(210, 512, 30, 0xc41e2a); // 3루수
-    // 투수 (마운드 위)
-    const ps = m.scale;
-    const px = m.x;
-    const py = m.y - 0.15 * ps;
-    g.fillStyle(0x000000, 0.25).fillEllipse(px, py + 1, 0.8 * ps, 0.18 * ps);
-    g.fillStyle(0xf2f2f2, 1).fillRect(px - 0.17 * ps, py - 0.9 * ps, 0.34 * ps, 0.9 * ps); // 하의
-    g.fillStyle(0xc41e2a, 1).fillRect(px - 0.19 * ps, py - 1.5 * ps, 0.38 * ps, 0.62 * ps); // 상의
-    g.fillStyle(0xd9a07a, 1).fillCircle(px, py - 1.62 * ps, 0.11 * ps);
-    g.fillStyle(0xc41e2a, 1).fillRect(px - 0.12 * ps, py - 1.76 * ps, 0.24 * ps, 0.1 * ps);
-
-    // 내야 흙: 홈 쪽으로 넓게
-    g.fillStyle(0x9c5d3b, 1).fillEllipse(336, 842, 1180, 424);
-    g.fillStyle(0xa86a44, 1).fillEllipse(336, 800, 640, 170);
-    for (let i = 0; i < 220; i++) {
-      const x = Math.floor(rnd() * W);
-      const y = 640 + Math.floor(rnd() * 320);
-      g.fillStyle(rnd() > 0.5 ? 0x88502f : 0xb57a4e, 0.55).fillRect(x, y, 2 + Math.floor(rnd() * 3), 2);
-    }
-
-    // 파울 라인과 타석 박스(흰 선)
-    const plateHalf = PLATE_WIDTH_M / 2;
-    g.lineStyle(5, 0xf3f0e8, 0.95);
-    for (const side of [-1, 1]) {
-      const a0 = project({ x: side * plateHalf, y: 0, z: 0 });
-      const a1 = project({ x: side * 3.4, y: 3.4, z: 0 });
-      g.lineBetween(a0.x, a0.y, a1.x, a1.y);
-    }
-    const boxIn = plateHalf + 0.152;
-    const boxOut = boxIn + 1.219;
-    const boxY = 0.914;
-    for (const side of [-1, 1]) {
-      g.strokePoints(
-        [
-          project({ x: side * boxIn, y: boxY, z: 0 }),
-          project({ x: side * boxOut, y: boxY, z: 0 }),
-          project({ x: side * boxOut, y: -boxY, z: 0 }),
-          project({ x: side * boxIn, y: -boxY, z: 0 }),
-        ],
-        true,
-      );
-    }
-    // 홈플레이트(오각형): 평평한 변이 투수 쪽
-    const plate = [
-      project({ x: -plateHalf, y: 0.216, z: 0 }),
-      project({ x: plateHalf, y: 0.216, z: 0 }),
-      project({ x: plateHalf, y: 0, z: 0 }),
-      project({ x: 0, y: -0.216, z: 0 }),
-      project({ x: -plateHalf, y: 0, z: 0 }),
-    ];
-    g.fillStyle(0xf1eee6, 1).fillPoints(plate, true);
-    g.lineStyle(2, 0x777777, 0.9).strokePoints(plate, true);
-
-    // 스트라이크존 테두리
-    g.lineStyle(2, 0xffffff, 0.9).strokeRect(
-      ZONE_CENTER.x - ZONE_SCALE_X,
-      ZONE_CENTER.y - ZONE_SCALE_Y,
-      ZONE_SCALE_X * 2,
-      ZONE_SCALE_Y * 2,
-    );
+  /** 3D 장면(Stage)은 Phaser 캔버스 뒤에 깔려 있고, 여기서는 그 위에 스트라이크존 테두리만 덧그린다 */
+  private drawZoneOutline() {
+    this.add
+      .graphics()
+      .setDepth(3)
+      .lineStyle(2, 0xffffff, 0.9)
+      .strokeRect(ZONE_CENTER.x - ZONE_SCALE_X, ZONE_CENTER.y - ZONE_SCALE_Y, ZONE_SCALE_X * 2, ZONE_SCALE_Y * 2);
   }
 
   // ───────── 투수 패널 ─────────
@@ -362,10 +220,13 @@ export class GameScene extends Phaser.Scene {
   // ───────── 투구 시작 (사람 투수 / 컴퓨터 투수) ─────────
   private resetVisuals() {
     this.fieldView.hide();
-    this.ball.setVisible(false);
+    this.stage.setBall(null);
     this.titleText.setText('');
     this.subText.setText('');
-    this.batter.reset();
+    this.stopSwing();
+    this.stage.batter.reset();
+    this.releaseAt = 0;
+    this.stage.setBattingTeam(battingTeam(this.gs));
     this.grid.clear();
     this.grid.setEnabled(false);
   }
@@ -408,6 +269,7 @@ export class GameScene extends Phaser.Scene {
     this.hintText.setText('');
     this.phase = 'ready';
     this.launchAt = now() + THROW_DELAY_MS;
+    this.releaseAt = this.launchAt;
   }
 
   private startAiPitch() {
@@ -420,6 +282,7 @@ export class GameScene extends Phaser.Scene {
     this.hintText.setY(900).setText(ko.batterHint);
     this.titleText.setText(ko.getReady).setColor('#ffffff');
     this.launchAt = now() + AI_PITCH_DELAY_MS;
+    this.releaseAt = this.launchAt;
   }
 
   // ───────── 비행 ─────────
@@ -431,7 +294,6 @@ export class GameScene extends Phaser.Scene {
     this.previewLoc = throwLocation(pitch, AVERAGE_PITCHER, this.rng);
     this.phase = 'flight';
     this.titleText.setText('');
-    this.ball.setVisible(true);
 
     if (this.humanPitching) {
       // 컴퓨터 타자: 공을 보고 스윙 여부와 타이밍을 정한다
@@ -453,7 +315,32 @@ export class GameScene extends Phaser.Scene {
     f.swingAt = now();
   }
 
+  private startSwing(target: Location) {
+    this.stopSwing();
+    const state = { u: 0 };
+    const draw = () => this.stage.batter.poseAtProgress(target, state.u);
+    this.swingTween = this.tweens.add({
+      targets: state,
+      u: 1,
+      duration: SWING_CONTACT_MS,
+      ease: 'Quad.easeIn',
+      onUpdate: draw,
+      onComplete: () => {
+        this.swingTween = this.tweens.add({ targets: state, u: 2, duration: FOLLOW_THROUGH_MS, ease: 'Quad.easeOut', onUpdate: draw });
+      },
+    });
+  }
+
+  private stopSwing() {
+    this.swingTween?.stop();
+    this.swingTween = null;
+  }
+
   update() {
+    // 투수 동작: 릴리스 시각에 맞춰 와인드업 → 투구 → 팔로스루
+    const tau = this.releaseAt > 0 ? Math.min(1.4, (now() - (this.releaseAt - WINDUP_MS)) / WINDUP_MS) : 0;
+    this.stage.pitcher.setProgress(Math.max(0, tau));
+    this.stage.render();
     if (this.phase === 'gauge') {
       const pos = gaugePosition(now() - this.gaugeStart);
       this.gaugeMarker.setPosition(GAUGE.x + GAUGE.w * pos, GAUGE.y);
@@ -463,12 +350,11 @@ export class GameScene extends Phaser.Scene {
 
     const f = this.flight;
     const t = (now() - f.start) / f.dur;
-    const p = ballAt(t, this.previewLoc, this.pendingThrow.pitchType);
-    this.ball.setPosition(p.x, p.y).setRadius(p.r);
+    this.stage.setBall(ballWorldAt(t, this.previewLoc, this.pendingThrow.pitchType));
 
     if (f.swingAt !== null && !f.batSwung && now() >= f.swingAt) {
       f.batSwung = true;
-      this.batter.swing(this.previewLoc);
+      this.startSwing(this.previewLoc);
     }
 
     const arrival = f.start + f.dur;
@@ -526,7 +412,7 @@ export class GameScene extends Phaser.Scene {
     this.previewLoc = null;
     if (trace) {
       // 컨택: 타구가 날아가는 모습을 먼저 보여주고 결과를 띄운다
-      this.ball.setVisible(false);
+      this.stage.setBall(null);
       this.fieldView.show(trace, showResult);
     } else {
       showResult();

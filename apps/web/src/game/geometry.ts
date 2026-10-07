@@ -12,8 +12,6 @@ export const ZONE_SCALE_Y = 82;
 export const PX_PER_INCH = (ZONE_SCALE_X * 2) / 17;
 /** 홈플레이트(바닥) 깊이의 화면 y */
 export const GROUND_Y = 784;
-/** 투수가 공을 놓는 지점(마운드 위 투수의 손 높이) */
-export const RELEASE_POINT = { x: 336, y: 484 };
 
 // ───── 3D → 화면 투영 ─────
 // 카메라는 홈플레이트 3.2m 뒤, 높이 1.1m에서 투수 쪽을 수평으로 본다. 월드 좌표(m): x=오른쪽(1루), y=투수 쪽, z=위, 원점=홈플레이트 중앙 바닥.
@@ -68,16 +66,29 @@ export const BREAK_OFFSET: Record<PitchType, Location> = {
   changeup: { x: 0, y: -0.15 },
 };
 
-/** t(0~1) 시점의 공 화면 위치와 반지름 */
-export function ballAt(t: number, actual: Location, type: PitchType) {
+/** 투수가 공을 놓는 월드 좌표(마운드 앞쪽, 머리 위 높이). 투수 릴리스 애니메이션과 같아야 한다 */
+export const RELEASE_WORLD: Point3 = { x: 0.3, y: 17.0, z: 1.9 };
+
+/** 존 좌표 오프셋을 월드 거리로 바꾼 값(변화구 눈속임 계산용) */
+const offsetToWorld = (o: Location): Point3 => ({
+  x: (o.x * PLATE_WIDTH_M) / 2,
+  y: 0,
+  z: o.y * ZONE_HALF_HEIGHT_M,
+});
+
+/**
+ * t(0~1) 시점의 공 월드 좌표. 투수 손에서 시작해 막판에 실제 위치(홈플레이트 위)로 꺾여 들어온다.
+ * t=1에서 zoneToWorld(actual)과 정확히 같다.
+ */
+export function ballWorldAt(t: number, actual: Location, type: PitchType): Point3 {
   const c = Math.min(1, Math.max(0, t));
   const off = BREAK_OFFSET[type];
   const k = 1 - Math.pow(c, 2.5);
-  const target = toScreen({ x: actual.x + off.x * k, y: actual.y + off.y * k });
+  const end = zoneToWorld({ x: actual.x + off.x * k, y: actual.y + off.y * k });
   return {
-    x: RELEASE_POINT.x + (target.x - RELEASE_POINT.x) * c,
-    y: RELEASE_POINT.y + (target.y - RELEASE_POINT.y) * c,
-    r: 2 + 8 * c * c,
+    x: RELEASE_WORLD.x + (end.x - RELEASE_WORLD.x) * c,
+    y: RELEASE_WORLD.y + (end.y - RELEASE_WORLD.y) * c,
+    z: RELEASE_WORLD.z + (end.z - RELEASE_WORLD.z) * c,
   };
 }
 

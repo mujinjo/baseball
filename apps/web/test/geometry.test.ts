@@ -9,7 +9,8 @@ import {
   project,
   zoneToWorld,
   ZONE_SCALE_Y,
-  ballAt,
+  ballWorldAt,
+  RELEASE_WORLD,
   flightMs,
   gaugeAccuracy,
   gaugePosition,
@@ -93,24 +94,31 @@ describe('비행', () => {
   it('직구는 0.6초 안에 도착할 만큼 빠르다', () => {
     expect(flightMs(DEFAULT_PITCH_PARAMS.types.fastball.speed)).toBeLessThan(600);
   });
-  it('도착 시점(t=1)에는 변화구도 실제 위치에 정확히 도달한다', () => {
+  it('도착 시점(t=1)에는 변화구도 실제 위치(홈플레이트 위)에 정확히 도달한다', () => {
     for (const type of PITCH_TYPES) {
       const actual = { x: 0.3, y: -0.2 };
-      const p = ballAt(1, actual, type);
-      const dest = toScreen(actual);
+      const p = ballWorldAt(1, actual, type);
+      const dest = zoneToWorld(actual);
       expect(p.x).toBeCloseTo(dest.x, 6);
       expect(p.y).toBeCloseTo(dest.y, 6);
+      expect(p.z).toBeCloseTo(dest.z, 6);
     }
   });
-  it('초반에는 오프셋 방향으로 벗어나 날아온다(눈속임)', () => {
-    const actual = { x: 0, y: 0 };
-    const early = ballAt(0.5, actual, 'curve');
-    const straight = ballAt(0.5, actual, 'changeup');
-    expect(Object.keys(BREAK_OFFSET)).toHaveLength(4);
-    expect(early.y).toBeLessThan(straight.y); // 커브는 높게(화면 위쪽)에서 떨어진다
+  it('출발점은 투수의 릴리스 지점', () => {
+    const p = ballWorldAt(0, { x: 0, y: 0 }, 'fastball');
+    expect(p.x).toBeCloseTo(RELEASE_WORLD.x);
+    expect(p.y).toBeCloseTo(RELEASE_WORLD.y);
+    expect(p.z).toBeCloseTo(RELEASE_WORLD.z);
   });
-  it('공은 가까워질수록 커진다', () => {
-    expect(ballAt(1, { x: 0, y: 0 }, 'fastball').r).toBeGreaterThan(ballAt(0.1, { x: 0, y: 0 }, 'fastball').r);
+  it('초반에는 오프셋 방향으로 벗어나 날아온다(눈속임): 커브는 높게 시작해 떨어진다', () => {
+    const actual = { x: 0, y: 0 };
+    const curve = ballWorldAt(0.5, actual, 'curve');
+    const change = ballWorldAt(0.5, actual, 'changeup');
+    expect(Object.keys(BREAK_OFFSET)).toHaveLength(4);
+    expect(curve.z).toBeGreaterThan(change.z);
+  });
+  it('공은 투수에서 홈플레이트로 다가온다', () => {
+    expect(ballWorldAt(0.8, { x: 0, y: 0 }, 'fastball').y).toBeLessThan(ballWorldAt(0.2, { x: 0, y: 0 }, 'fastball').y);
   });
 });
 
