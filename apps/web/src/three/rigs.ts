@@ -104,6 +104,10 @@ interface BatPose {
   chestYaw: number;
   lean: number;
   crouch: number;
+  /** 앞발 내딛기 진행도(0=처음 자리, 1=내디뎌 착지) */
+  stride: number;
+  /** 뒷발 뒤꿈치 들림/회전(0~1) */
+  heel: number;
 }
 
 const BODY = { x: -0.78, y: -0.22 };
@@ -116,26 +120,44 @@ const STANCE: BatPose = {
   chestYaw: -28,
   lean: 0.22,
   crouch: 0.17,
+  stride: 0,
+  heel: 0,
+};
+/** 로드 완료: 앞발을 내디디며 손과 배트를 뒤로 당긴 자세(체중은 뒤, 몸은 닫힘) */
+const LOADED: BatPose = {
+  hands: { x: -0.4, y: -0.58, z: 1.36 },
+  azimuth: -102,
+  loft: 60,
+  pelvisYaw: -26,
+  chestYaw: -46,
+  lean: 0.18,
+  crouch: 0.2,
+  stride: 1,
+  heel: 0,
 };
 const CONTACT_HANDS: Point3 = { x: -0.4, y: -0.08, z: 1.05 };
 const FOLLOW: BatPose = {
-  hands: { x: -0.3, y: 0.32, z: 1.22 },
-  azimuth: 88,
-  loft: 32,
-  pelvisYaw: 72,
-  chestYaw: 98,
+  hands: { x: -0.3, y: 0.34, z: 1.22 },
+  azimuth: 85,
+  loft: 28,
+  pelvisYaw: 78,
+  chestYaw: 104,
   lean: 0.08,
   crouch: 0.07,
+  stride: 1,
+  heel: 1,
 };
-/** 마무리 끝: 배트가 몸 앞을 지나 왼쪽(화면 왼쪽)으로 확 감겨 돌아간다 */
+/** 마무리 끝: 배트가 몸 앞을 지나 왼쪽 어깨 뒤로 높이 감겨 올라간다. 몸은 투수 쪽을 향해 완전히 열린다 */
 const WRAP: BatPose = {
-  hands: { x: -0.62, y: 0.12, z: 1.42 },
-  azimuth: 192,
-  loft: 26,
-  pelvisYaw: 100,
-  chestYaw: 128,
-  lean: 0.05,
-  crouch: 0.05,
+  hands: { x: -0.66, y: 0.06, z: 1.5 },
+  azimuth: 205,
+  loft: 52,
+  pelvisYaw: 122,
+  chestYaw: 158,
+  lean: 0.04,
+  crouch: 0.04,
+  stride: 1,
+  heel: 1,
 };
 
 const lerpPose = (a: BatPose, b: BatPose, t: number): BatPose => ({
@@ -146,6 +168,8 @@ const lerpPose = (a: BatPose, b: BatPose, t: number): BatPose => ({
   chestYaw: lerp(a.chestYaw, b.chestYaw, t),
   lean: lerp(a.lean, b.lean, t),
   crouch: lerp(a.crouch, b.crouch, t),
+  stride: lerp(a.stride, b.stride, t),
+  heel: lerp(a.heel, b.heel, t),
 });
 
 /** 우타자: 몸 전체와 배트를 3D로 구성한다. 스윙은 준비 → 타격 → 마무리 순서로 보간 */
@@ -195,14 +219,17 @@ export class BatterRig {
     // 우타자: 왼손(앞손)이 노브 쪽 아래, 오른손(뒷손)이 그 위를 잡는다
     const upperHand = hands.clone().addScaledVector(dir, 0.13);
 
-    const base = toV3({ x: BODY.x, y: BODY.y, z: 0 });
+    // 체중 이동과 발: 앞발은 들었다 내디디고(착지 후 고정), 뒷발은 뒤꿈치가 들리며 회전한다
+    const st = p.stride;
+    const hl = p.heel;
+    const base = toV3({ x: BODY.x, y: BODY.y + 0.08 * st + 0.06 * hl, z: 0 });
     const cf = fwd(rad(p.chestYaw));
     const cr = right(rad(p.chestYaw));
     // 앞팔(왼팔)은 팔꿈치가 아래·앞쪽을, 뒷팔(오른팔)은 팔꿈치가 바깥·살짝 위를 향한다
     const poleL = new THREE.Vector3(0, -1, 0).addScaledVector(cf, 0.7).addScaledVector(cr, -0.2);
     const poleR = new THREE.Vector3(0, -0.45, 0).addScaledVector(cr, 0.9).addScaledVector(cf, -0.35);
-    const footL = toV3({ x: BODY.x + 0.02, y: BODY.y + 0.34, z: 0 });
-    const footR = toV3({ x: BODY.x + 0.12, y: BODY.y - 0.3, z: 0 });
+    const footL = toV3({ x: BODY.x + 0.02 + 0.05 * st, y: BODY.y + 0.34 + 0.18 * st, z: 0.26 * Math.sin(Math.PI * st) });
+    const footR = toV3({ x: BODY.x + 0.12 + 0.04 * hl, y: BODY.y - 0.3 + 0.03 * hl, z: 0.05 * hl });
     bodyJoints(
       {
         base,
@@ -238,29 +265,39 @@ export class BatterRig {
       chestYaw: 66,
       lean: 0.14,
       crouch: 0.13,
+      stride: 1,
+      heel: 0.7,
     };
   }
 
+  /** 로드(앞발 내딛기 + 손·배트 뒤로 당김) 진행도 L: 0=준비, 1=로드 완료. 투구 직후 자동으로 진행된다 */
+  loadAt(load: number): void {
+    this.setPose(lerpPose(STANCE, LOADED, smooth(0, 1, clamp01(load))));
+  }
+
   /**
-   * 스윙 진행도 u: 0=준비, 1=타격(공 위치), 2=마무리.
+   * 스윙 진행도 u: 0=로드 자세에서 출발, 1=타격(공 위치), 2=마무리. load: 스윙 시작 시점의 로드 진행도.
    * 실제 스윙처럼 골반이 먼저 돌고 → 어깨 → 손 → 배트 머리 순서로 늦게 따라온다(배트 머리가 뒤에서 끌려 나옴).
    */
-  poseAtProgress(target: Location, u: number): void {
+  poseAtProgress(target: Location, u: number, load = 1): void {
     const c = this.contactPose(target);
+    const start = lerpPose(STANCE, LOADED, smooth(0, 1, clamp01(load)));
     if (u <= 1) {
       const e = (a: number, b: number) => smooth(a, b, u);
       this.setPose({
-        hands: lerp3(STANCE.hands, c.hands, e(0, 0.8)),
-        azimuth: lerp(STANCE.azimuth, c.azimuth, e(0.3, 1)),
-        loft: lerp(STANCE.loft, c.loft, e(0.05, 0.85)),
-        pelvisYaw: lerp(STANCE.pelvisYaw, c.pelvisYaw, e(0, 0.75)),
-        chestYaw: lerp(STANCE.chestYaw, c.chestYaw, e(0.12, 0.92)),
-        lean: lerp(STANCE.lean, c.lean, u),
-        crouch: lerp(STANCE.crouch, c.crouch, u),
+        hands: lerp3(start.hands, c.hands, e(0, 0.8)),
+        azimuth: lerp(start.azimuth, c.azimuth, e(0.3, 1)),
+        loft: lerp(start.loft, c.loft, e(0.05, 0.85)),
+        pelvisYaw: lerp(start.pelvisYaw, c.pelvisYaw, e(0, 0.75)),
+        chestYaw: lerp(start.chestYaw, c.chestYaw, e(0.12, 0.92)),
+        lean: lerp(start.lean, c.lean, u),
+        crouch: lerp(start.crouch, c.crouch, u),
+        stride: lerp(start.stride, c.stride, e(0, 0.3)),
+        heel: lerp(start.heel, c.heel, e(0.2, 1)),
       });
     } else {
       const t = clamp01(u - 1);
-      // 타격 → 투수 쪽으로 쭉 뻗고(0~0.45) → 몸 앞으로 감아 왼쪽으로 돌아간다(0.45~1)
+      // 타격 → 투수 쪽으로 쭉 뻗고(0~0.45) → 몸 앞으로 감아 왼쪽 어깨 뒤로 감겨 올라간다(0.4~1)
       this.setPose(t <= 0.45 ? lerpPose(c, FOLLOW, smooth(0, 0.45, t)) : lerpPose(FOLLOW, WRAP, smooth(0.4, 1, t)));
     }
   }

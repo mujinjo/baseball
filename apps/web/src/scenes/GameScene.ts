@@ -28,7 +28,7 @@ import {
 import { ko } from '../i18n/ko';
 import { Button } from '../ui/Button';
 import { Scoreboard } from '../ui/Scoreboard';
-import { FOLLOW_THROUGH_MS, SWING_CONTACT_MS } from '../game/swing';
+import { FOLLOW_THROUGH_MS, LOAD_MS, SWING_CONTACT_MS } from '../game/swing';
 import type { Stage } from '../three/stage';
 import { WINDUP_MS } from '../three/rigs';
 import { FieldView } from '../ui/FieldView';
@@ -329,10 +329,10 @@ export class GameScene extends Phaser.Scene {
     f.swingAt = now();
   }
 
-  private startSwing(target: Location) {
+  private startSwing(target: Location, load: number) {
     this.stopSwing();
     const state = { u: 0 };
-    const draw = () => this.stage.batter.poseAtProgress(target, state.u);
+    const draw = () => this.stage.batter.poseAtProgress(target, state.u, load);
     this.swingTween = this.tweens.add({
       targets: state,
       u: 1,
@@ -370,9 +370,11 @@ export class GameScene extends Phaser.Scene {
 
     if (f.swingAt !== null && !f.batSwung && now() >= f.swingAt) {
       f.batSwung = true;
-      this.startSwing(this.previewLoc);
+      this.startSwing(this.previewLoc, Math.min(1, Math.max(0, (now() - f.start) / LOAD_MS)));
     }
 
+    // 투구 직후 타자가 자동으로 로드(앞발 내딛기, 손을 뒤로)한다. 스윙을 시작하면 그 자세에서 이어진다
+    if (!f.batSwung) this.stage.batter.loadAt((now() - f.start) / LOAD_MS);
     const arrival = f.start + f.dur;
     const contactAt = f.swingAt !== null ? f.swingAt + SWING_CONTACT_MS : null;
     // 스윙했다면 공 도착과 배트 접촉 중 늦은 쪽에서 판정한다. 사람 타자는 도착 후 잠깐 더 기다려 준다
