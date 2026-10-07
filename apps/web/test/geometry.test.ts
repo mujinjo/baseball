@@ -6,6 +6,8 @@ import {
   GROUND_Y,
   PX_PER_INCH,
   ZONE_SCALE_X,
+  project,
+  zoneToWorld,
   ZONE_SCALE_Y,
   ballAt,
   flightMs,
@@ -33,6 +35,30 @@ describe('실제 비율', () => {
     const zoneBottom = ZONE_CENTER.y + ZONE_SCALE_Y;
     expect((GROUND_Y - zoneBottom) / PX_PER_INCH).toBeGreaterThan(17);
     expect((GROUND_Y - zoneBottom) / PX_PER_INCH).toBeLessThan(24);
+  });
+});
+
+describe('3D 투영', () => {
+  it('홈플레이트 중앙 바닥은 GROUND_Y, 폭은 존 폭', () => {
+    const c = project({ x: 0, y: 0, z: 0 });
+    expect(c.x).toBeCloseTo(ZONE_CENTER.x);
+    expect(c.y).toBeCloseTo(GROUND_Y);
+    const edge = project({ x: 0.216, y: 0, z: 0 });
+    expect((edge.x - c.x) * 2).toBeCloseTo(ZONE_SCALE_X * 2, 0);
+  });
+  it('존 좌표를 월드로 보냈다가 투영하면 화면 존 위치와 거의 같다', () => {
+    for (const l of [{ x: 0, y: 0 }, { x: 1, y: 1 }, { x: -1, y: -1 }]) {
+      const p = project(zoneToWorld(l));
+      const s = toScreen(l);
+      expect(Math.abs(p.x - s.x)).toBeLessThan(4);
+      expect(Math.abs(p.y - s.y)).toBeLessThan(6);
+    }
+  });
+  it('멀리 있을수록 작고 위쪽(수평선 쪽)에 보인다', () => {
+    const near = project({ x: 0, y: 0, z: 0 });
+    const far = project({ x: 0, y: 18.44, z: 0 });
+    expect(far.scale).toBeLessThan(near.scale);
+    expect(far.y).toBeLessThan(near.y);
   });
 });
 

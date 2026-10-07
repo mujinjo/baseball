@@ -9,10 +9,45 @@ export const ZONE_SCALE_X = 60;
 export const ZONE_SCALE_Y = 84;
 /** 홈플레이트 높이에서 1인치가 차지하는 픽셀 */
 export const PX_PER_INCH = (ZONE_SCALE_X * 2) / 17;
-/** 홈플레이트(바닥) 깊이의 화면 y. 존 아래쪽(무릎, 바닥에서 약 20인치) 아래에 있다 */
+/** 홈플레이트(바닥) 깊이의 화면 y. 존 아래쪽(무릎, 바닥에서 약 18인치) 아래에 있다 */
 export const GROUND_Y = 682;
-/** 투수가 공을 놓는 지점(마운드 위, 화면상 아주 작게 보임) */
-export const RELEASE_POINT = { x: 270, y: 262 };
+/** 투수가 공을 놓는 지점(마운드 위, 화면상 작게 보임) */
+export const RELEASE_POINT = { x: 270, y: 272 };
+
+// ───── 3D → 화면 투영 ─────
+// 카메라는 홈플레이트 뒤쪽 위에서 투수 쪽을 수평으로 본다. 월드 좌표(m): x=오른쪽(1루), y=투수 쪽, z=위, 원점=홈플레이트 중앙 바닥.
+// 홈플레이트(폭 0.432m)가 존 폭(120px)과 같도록 초점거리를 잡는다.
+export const PLATE_WIDTH_M = 0.432;
+export const PX_PER_M = (ZONE_SCALE_X * 2) / PLATE_WIDTH_M;
+export const CAM_HEIGHT_M = 1.6;
+export const CAM_BEHIND_M = 5.05;
+export const FOCAL_PX = PX_PER_M * CAM_BEHIND_M;
+export const HORIZON_Y = GROUND_Y - PX_PER_M * CAM_HEIGHT_M;
+
+export interface Point3 {
+  x: number;
+  y: number;
+  z: number;
+}
+
+/** 월드 좌표 → 화면 좌표. scale은 그 지점에서 1m가 차지하는 픽셀 */
+export function project(p: Point3) {
+  const depth = p.y + CAM_BEHIND_M;
+  return {
+    x: ZONE_CENTER.x + (FOCAL_PX * p.x) / depth,
+    y: HORIZON_Y + (FOCAL_PX * (CAM_HEIGHT_M - p.z)) / depth,
+    scale: FOCAL_PX / depth,
+  };
+}
+
+/** 존 좌표(±1이 존 경계) → 홈플레이트 위 공간의 월드 좌표. 존 높이는 약 0.46~1.07m */
+export const ZONE_CENTER_Z_M = 0.76;
+export const ZONE_HALF_HEIGHT_M = 0.305;
+export const zoneToWorld = (l: Location): Point3 => ({
+  x: (l.x * PLATE_WIDTH_M) / 2,
+  y: 0.05,
+  z: ZONE_CENTER_Z_M + l.y * ZONE_HALF_HEIGHT_M,
+});
 
 export const toScreen = (l: Location) => ({
   x: ZONE_CENTER.x + l.x * ZONE_SCALE_X,

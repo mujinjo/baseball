@@ -31,6 +31,7 @@ import { FieldView } from '../ui/FieldView';
 import { ZoneGrid } from '../ui/ZoneGrid';
 import {
   GROUND_Y,
+  PLATE_WIDTH_M,
   RELEASE_POINT,
   ZONE_CENTER,
   ZONE_SCALE_X,
@@ -39,7 +40,7 @@ import {
   flightMs,
   gaugeAccuracy,
   gaugePosition,
-  toScreen,
+  project,
 } from '../game/geometry';
 import { describeOutcome } from '../game/messages';
 import type { GameOptions } from './TitleScene';
@@ -78,7 +79,8 @@ export class GameScene extends Phaser.Scene {
   private titleText!: Phaser.GameObjects.Text;
   private subText!: Phaser.GameObjects.Text;
   private ball!: Phaser.GameObjects.Arc;
-  private batter!: Batter;
+  /** 개발/테스트에서 스윙 자세를 확인하기 위해 외부에서 접근할 수 있게 둔다 */
+  batter!: Batter;
   private fieldView!: FieldView;
 
   // 투수 패널
@@ -155,78 +157,126 @@ export class GameScene extends Phaser.Scene {
 
   // ───────── 배경 ─────────
   /**
-   * 포수 뒤에서 본 구장. 원근법: 멀리 마운드와 외야 펜스, 가까이 홈플레이트와 타석.
-   * 홈플레이트 폭이 스트라이크존 폭과 같고, 우타자가 왼쪽 타석 박스에 선다.
+   * 포수 뒤에서 본 구장. 홈플레이트·타석 박스는 3D 투영(geometry.project)으로 정확한 원근을 주고,
+   * 멀리 있는 내야 베이스와 마운드는 화면 안에 들어오도록 배치한다.
    */
   private drawField() {
     const g = this.add.graphics();
     const cx = ZONE_CENTER.x;
-    g.fillStyle(0x16331f, 1).fillRect(0, 0, 540, 960);
+    const W = 540;
+    g.fillStyle(0x16331f, 1).fillRect(0, 0, W, 960);
     // 관중석과 외야 펜스
-    g.fillStyle(0x232a45, 1).fillRect(0, 165, 540, 52);
-    for (let i = 0; i < 90; i++) g.fillStyle(0x4a5278, 0.8).fillRect((i * 37) % 540, 172 + ((i * 53) % 38), 3, 3);
-    g.fillStyle(0x1d3a6b, 1).fillRect(0, 217, 540, 14);
+    g.fillStyle(0x232a45, 1).fillRect(0, 165, W, 52);
+    for (let i = 0; i < 90; i++) g.fillStyle(0x4a5278, 0.8).fillRect((i * 37) % W, 172 + ((i * 53) % 38), 3, 3);
+    g.fillStyle(0x1d3a6b, 1).fillRect(0, 217, W, 14);
     // 외야 잔디(멀리서부터 줄무늬)
     for (let i = 0; i < 8; i++) {
-      const y0 = 231 + i * i * 4 + i * 20;
-      const y1 = 231 + (i + 1) * (i + 1) * 4 + (i + 1) * 20;
-      g.fillStyle(i % 2 ? 0x2f7040 : 0x2a6a38, 1).fillRect(0, y0, 540, Math.min(y1, 740) - y0);
+      const y0 = 231 + i * i * 4 + i * 14;
+      const y1 = 231 + (i + 1) * (i + 1) * 4 + (i + 1) * 14;
+      g.fillStyle(i % 2 ? 0x2f7040 : 0x2a6a38, 1).fillRect(0, y0, W, Math.min(y1, 742) - y0);
     }
-    // 내야 흙: 마운드 부근에서 홈 쪽으로 넓어진다
+
+    // 내야 흙(스킨)과 안쪽 잔디: 1루·3루·2루 베이스가 화면 안에 보이도록 배치
+    const B1 = { x: 424, y: 326 };
+    const B3 = { x: 116, y: 326 };
+    const B2 = { x: cx, y: 254 };
     g.fillStyle(0x94703f, 1).fillPoints(
       [
-        { x: cx - 78, y: 286 },
-        { x: cx + 78, y: 286 },
-        { x: 585, y: 560 },
+        { x: cx, y: 238 },
+        { x: 400, y: 272 },
+        { x: 585, y: 336 },
         { x: 585, y: 760 },
         { x: -45, y: 760 },
-        { x: -45, y: 560 },
+        { x: -45, y: 336 },
+        { x: 140, y: 272 },
+      ],
+      true,
+    );
+    g.fillStyle(0x2f7040, 1).fillPoints(
+      [
+        { x: cx, y: 304 },
+        { x: B1.x - 40, y: 342 },
+        { x: 390, y: 500 },
+        { x: cx, y: 590 },
+        { x: 150, y: 500 },
+        { x: B3.x + 40, y: 342 },
       ],
       true,
     );
     // 홈 주변 흙 원
-    g.fillStyle(0x86663a, 1).fillEllipse(cx, GROUND_Y - 6, 560, 190);
-    // 마운드와 투수
-    const mound = { x: RELEASE_POINT.x, y: RELEASE_POINT.y + 34 };
-    g.fillStyle(0xa8834c, 1).fillEllipse(mound.x, mound.y, 64, 13);
-    g.fillStyle(0xffffff, 1).fillRect(mound.x - 5, mound.y - 4, 10, 2);
-    g.fillStyle(0xe6b88f, 1).fillCircle(mound.x, mound.y - 42, 4); // 머리
-    g.fillStyle(0xd9d9e0, 1).fillRect(mound.x - 5, mound.y - 37, 10, 17); // 상의
-    g.fillStyle(0x2c2c3a, 1).fillRect(mound.x - 5, mound.y - 20, 10, 18); // 하의
-    g.fillStyle(0x16224a, 1).fillRect(mound.x - 5, mound.y - 47, 10, 4); // 모자
-    // 파울 라인: 홈플레이트 뒤쪽 모서리에서 좌우 외야로 뻗는다
+    g.fillStyle(0x86663a, 1).fillEllipse(cx, GROUND_Y - 4, 520, 200);
+
+    // 베이스 라인(홈플레이트에서 1루/3루로)과 파울 라인
+    const plateR = project({ x: PLATE_WIDTH_M / 2, y: 0, z: 0 });
+    const plateL = project({ x: -PLATE_WIDTH_M / 2, y: 0, z: 0 });
     g.lineStyle(3, 0xffffff, 0.9)
-      .lineBetween(cx - 60, GROUND_Y - 4, -10, 470)
-      .lineBetween(cx + 60, GROUND_Y - 4, 550, 470);
-    // 타석 박스 (4×6피트, 홈플레이트에서 6인치 띄움)
-    const boxIn = 60 + 6 * ((ZONE_SCALE_X * 2) / 17);
-    g.lineStyle(3, 0xffffff, 0.85);
+      .lineBetween(plateR.x, plateR.y, B1.x, B1.y)
+      .lineBetween(B1.x, B1.y, 570, B1.y - 34)
+      .lineBetween(plateL.x, plateL.y, B3.x, B3.y)
+      .lineBetween(B3.x, B3.y, -30, B3.y - 34);
+
+    // 마운드와 투수(멀리 있어 작게)
+    const mound = { x: cx, y: 336 };
+    g.fillStyle(0xa8834c, 1).fillEllipse(mound.x, mound.y, 150, 20);
+    g.fillStyle(0xffffff, 1).fillRect(mound.x - 7, mound.y - 5, 14, 3);
+    // 2루 베이스는 투수 뒤쪽에 보이도록 먼저 그리고 투수가 일부를 가린다
+    const base = (b: { x: number; y: number }, w: number) => {
+      g.fillStyle(0xffffff, 1).fillPoints(
+        [
+          { x: b.x - w / 2, y: b.y },
+          { x: b.x, y: b.y - w * 0.28 },
+          { x: b.x + w / 2, y: b.y },
+          { x: b.x, y: b.y + w * 0.28 },
+        ],
+        true,
+      );
+      g.lineStyle(1, 0x888888, 1).strokePoints(
+        [
+          { x: b.x - w / 2, y: b.y },
+          { x: b.x, y: b.y - w * 0.28 },
+          { x: b.x + w / 2, y: b.y },
+          { x: b.x, y: b.y + w * 0.28 },
+        ],
+        true,
+      );
+    };
+    base(B2, 20);
+    base(B1, 34);
+    base(B3, 34);
+    g.fillStyle(0xe6b88f, 1).fillCircle(mound.x, mound.y - 58, 5); // 머리
+    g.fillStyle(0xd9d9e0, 1).fillRect(mound.x - 7, mound.y - 52, 14, 24); // 상의
+    g.fillStyle(0x2c2c3a, 1).fillRect(mound.x - 7, mound.y - 28, 14, 26); // 하의
+    g.fillStyle(0x16224a, 1).fillRect(mound.x - 7, mound.y - 64, 14, 5); // 모자
+
+    // 타석 박스: 4×6피트(1.22×1.83m), 홈플레이트에서 15cm 띄움, 중심은 플레이트 중앙
+    const boxIn = PLATE_WIDTH_M / 2 + 0.152;
+    const boxOut = boxIn + 1.219;
+    const boxY = 0.914;
+    g.lineStyle(3, 0xffffff, 0.9);
     for (const side of [-1, 1]) {
-      const inner = cx + side * boxIn;
-      const outer = side < 0 ? -20 : 560;
       g.strokePoints(
         [
-          { x: inner, y: GROUND_Y - 74 },
-          { x: outer, y: GROUND_Y - 82 },
-          { x: outer, y: GROUND_Y + 70 },
-          { x: inner, y: GROUND_Y + 62 },
-          { x: inner, y: GROUND_Y - 74 },
+          project({ x: side * boxIn, y: boxY, z: 0 }),
+          project({ x: side * boxOut, y: boxY, z: 0 }),
+          project({ x: side * boxOut, y: -boxY, z: 0 }),
+          project({ x: side * boxIn, y: -boxY, z: 0 }),
         ],
         true,
       );
     }
-    // 홈플레이트: 폭 = 스트라이크존 폭. 평평한 변이 투수 쪽(위)
-    const half = ZONE_SCALE_X;
+    // 홈플레이트(오각형): 평평한 변이 투수 쪽
+    const half = PLATE_WIDTH_M / 2;
     const plate = [
-      { x: cx - half, y: GROUND_Y - 14 },
-      { x: cx + half, y: GROUND_Y - 14 },
-      { x: cx + half, y: GROUND_Y + 4 },
-      { x: cx, y: GROUND_Y + 24 },
-      { x: cx - half, y: GROUND_Y + 4 },
+      project({ x: -half, y: 0.216, z: 0 }),
+      project({ x: half, y: 0.216, z: 0 }),
+      project({ x: half, y: 0, z: 0 }),
+      project({ x: 0, y: -0.216, z: 0 }),
+      project({ x: -half, y: 0, z: 0 }),
     ];
     g.fillStyle(0xf4f4f4, 1).fillPoints(plate, true);
     g.lineStyle(2, 0x555555, 1).strokePoints(plate, true);
-    // 스트라이크존 테두리 (바닥에서 약 20인치 위 ~ 가슴 높이)
+
+    // 스트라이크존 테두리
     g.lineStyle(3, 0xffffff, 0.9).strokeRect(
       ZONE_CENTER.x - ZONE_SCALE_X,
       ZONE_CENTER.y - ZONE_SCALE_Y,
@@ -234,8 +284,8 @@ export class GameScene extends Phaser.Scene {
       ZONE_SCALE_Y * 2,
     );
     // 하단 조작 영역 배경
-    g.fillStyle(0x10261a, 1).fillRect(0, 742, 540, 218);
-    g.lineStyle(2, 0x2d4a35, 1).lineBetween(0, 742, 540, 742);
+    g.fillStyle(0x10261a, 1).fillRect(0, 742, W, 218);
+    g.lineStyle(2, 0x2d4a35, 1).lineBetween(0, 742, W, 742);
   }
 
   // ───────── 투수 패널 ─────────
@@ -389,7 +439,7 @@ export class GameScene extends Phaser.Scene {
 
     if (f.swingAt !== null && !f.batSwung && now() >= f.swingAt) {
       f.batSwung = true;
-      this.batter.swing(toScreen(this.previewLoc));
+      this.batter.swing(this.previewLoc);
     }
 
     const arrival = f.start + f.dur;
