@@ -147,11 +147,11 @@ const FOLLOW: BatPose = {
   stride: 1,
   heel: 1,
 };
-/** 마무리 끝: 배트가 몸 앞을 지나 왼쪽 어깨 뒤로 높이 감겨 올라간다. 몸은 투수 쪽을 향해 완전히 열린다 */
+/** 마무리 끝: 배트가 몸 앞을 지나 왼쪽(화면 왼쪽)으로 완전히 넘어가 어깨 뒤에 걸린다. 몸은 투수 쪽으로 열린다 */
 const WRAP: BatPose = {
-  hands: { x: -0.66, y: 0.06, z: 1.5 },
-  azimuth: 205,
-  loft: 52,
+  hands: { x: -0.78, y: -0.34, z: 1.48 },
+  azimuth: 190,
+  loft: -14,
   pelvisYaw: 122,
   chestYaw: 158,
   lean: 0.04,
